@@ -25,7 +25,7 @@ env:
   CARGO_TERM_COLOR: always
 
   # Reduce Cargo output.
-  CARGO_TERM_QUIET: 1
+  CARGO_TERM_QUIET: true
 
   # Disable incremental compilation for faster from-scratch builds.
   CARGO_INCREMENTAL: 0
@@ -248,9 +248,8 @@ jobs:
       - name: Prune the workspace artifacts before saving the cache
         if: steps.cargo-cache.outputs.cache-hit != 'true'
         run: |
-          crates="$(git ls-files '*/Cargo.toml' | xargs -n1 dirname) ally-task ally-guy"
+          crates="$(cargo metadata --frozen --no-deps --format-version 1 | jq -r '.packages[].name')"
           for crate in ${crates}; do
-            # Artifact file names use underscores, directory names use the package name.
             file="${crate//-/_}"
             rm -rf "target/ci/.fingerprint/${crate}-"* "target/ci/build/${crate}-"*
             rm -f "target/ci/deps/${file}-"* "target/ci/deps/lib${file}-"* \

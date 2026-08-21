@@ -1,0 +1,4 @@
+# Everything here uses the same names as the long flags.
+locales-dir = "i18n"
+filters = ["tr"]
+unused = "error"

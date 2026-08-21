@@ -1,3 +1,5 @@
+# Cargo.toml
+
 [package]
 name = "flynt"
 version = "0.3.0"
@@ -23,3 +25,50 @@ exclude = [
 	"Icon*",
 	"justfile",
 ]
+
+[lib]
+name = "flynt"
+path = "src/lib.rs"
+
+[[bin]]
+name = "flynt"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { version = "1", default-features = false, features = ["std"] }
+clap = { version = "4.6", default-features = false, features = [
+	"std",
+	"derive",
+	"help",
+	"usage",
+	"error-context",
+	"wrap_help",
+] }
+fluent-syntax = { version = "0.12", default-features = false }
+glob = { version = "0.3", default-features = false }
+regex = { version = "1.11", default-features = false, features = ["std", "perf", "unicode-perl"] }
+serde = { version = "1", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
+walkdir = { version = "2.5", default-features = false }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+debug = "none"
+panic = "abort"
+
+
+# Profile for GitHub action, used by `.github/workflows/ci-rust.yaml`
+[profile.ci]
+inherits = "dev"
+debug = false
+incremental = false
+opt-level = 0
+
+[profile.ci.package."*"]
+debug = false
+incremental = false
+opt-level = 0
