@@ -1,0 +1,36 @@
+# .github/filters.yaml
+
+# Shared path filters used by the `changes` job.
+#
+# Modified files that are not filtered by these exclusions will trigger the `test` jobs in:
+# - `.github/workflows/ci-rust.yaml`
+#
+# The step `Detect file changes based on filters.yaml` uses `dorny/paths-filter` with
+# `predicate-quantifier = every`:
+# - this is AND semantics
+# - it's not possible to re-include a file with a positive pattern
+# - exclude only the files to skip, tipically docs and dev config files
+
+# Common exclusions, ignored in all actions.
+_common: &common
+  - "**" # Must begin with `**`.
+  - "!**.md"
+  - "!.clippy.toml"
+  - "!.editorconfig"
+  - "!.env*"
+  - "!.githooks/**"
+  - "!.github/filters.yaml"
+  - "!justfile"
+  - "!.just/**"
+  - "!LICENSE*"
+  - "!.markdownlint.json"
+
+#  Release exclusions, ignored in release actions.
+_release: &release
+  - "!.gitignore"
+  - "!deny.toml"
+  - "!.github/workflows/ci**"
+
+# CI: rebuild on any source change.
+ci:
+  - *common

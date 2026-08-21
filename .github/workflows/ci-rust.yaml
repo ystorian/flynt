@@ -1,0 +1,308 @@
+# .github/workflows/ci-rust.yaml
+
+name: CI
+
+on:
+  schedule:
+    # Runs at 08:00 UTC every Monday.
+    - cron: 0 8 * * 1
+  workflow_dispatch: # Allows manual triggering
+  push:
+    # Run on push to branchs, ignore push to tags
+    branches:
+      - "**"
+    tags:
+      - "!**"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+env:
+  # Always display colored outputs.
+  CARGO_TERM_COLOR: always
+
+  # Reduce Cargo output.
+  CARGO_TERM_QUIET: 1
+
+  # Disable incremental compilation for faster from-scratch builds.
+  CARGO_INCREMENTAL: 0
+
+  # Disable debug info to reduce the size of `./target`
+  CARGO_PROFILE_TEST_DEBUG: 0
+
+  # Optional Rust toolchain override.
+  #
+  # - leave empty to use the runner's preinstalled toolchain (no rustup cache or download)
+  # - set it to a version (e.g. "1.97") to install and pin that version.
+  RUST_VERSION: "1.85"
+
+  # Link with LLVM's lld-link on Windows, faster than the default linker.
+  CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
+
+
+jobs:
+  # Detect whether any relevant file has changed.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    outputs:
+      ci: ${{ steps.filter.outputs.ci || 'true' }}
+    steps:
+      - name: Checkout the source
+        if: github.event_name == 'push'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect file changes based on filters.yaml
+        if: github.event_name == 'push'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          predicate-quantifier: 'every'
+          filters: .github/filters.yaml
+
+
+  check:
+    name: Check - Linux x64
+    needs: changes
+    # cargo-deny-action v2.1.1 does not support arm64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Rust formatting
+        # Fail fast with the default version of `rustfmt` installed in the runner.
+        run: |
+          cargo fmt --version
+          cargo fmt --all --check
+
+      - name: Check dependencies, licenses, and audit vulnerabilities
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          log-level: error
+          command: check
+          arguments: --all-features --workspace
+
+      - name: Check actions with pinact
+        uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a # v3.0.0
+        with:
+          fix: false
+
+      - name: Audit actions with zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          advanced-security: false
+          persona: "auditor"
+          annotations: true
+
+
+  test:
+    name: Test - ${{matrix.name}}
+    needs: changes
+    if: needs.changes.outputs.ci == 'true'
+    runs-on: ${{matrix.os}}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        # Only for matrix using Windows.
+        shell: bash
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-26.04-arm
+            name: Linux arm64
+          - os: windows-11-arm
+            name: Windows arm64
+          - os: macos-26
+            name: macOS arm64
+
+    steps:
+
+      - name: Checkout the source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Windows - Tune for faster build
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          Add-MpPreference -ExclusionPath "$env:WORKSPACE\target"
+          Add-MpPreference -ExclusionPath "$env:USERPROFILE\.cargo"
+          Add-MpPreference -ExclusionPath "$env:USERPROFILE\.rustup"
+          fsutil behavior set disablelastaccess 1
+          fsutil behavior set disable8dot3 1
+
+      - name: Display the current Rust version and toolchains
+        run: rustup -V && rustup show --verbose
+
+      - name: Check for a pinned Rust version
+        id: toolchain
+        run: |
+          ver_newer() {
+            local IFS=. a b i; set -f; a=($1) b=($2); set +f
+            for i in 0 1 2; do
+              [ "${a[i]:-0}" -gt "${b[i]:-0}" ] && return 0
+              [ "${a[i]:-0}" -lt "${b[i]:-0}" ] && return 1
+            done
+            return 1
+          }
+          CURRENT="$(rustc --version | cut -d' ' -f2)"
+          if [ -z "${RUST_VERSION}" ]; then
+            echo "No pinned version; reusing the runner's preinstalled toolchain ${CURRENT}."
+            echo "preinstalled=true" >> "$GITHUB_OUTPUT"
+          elif [ "${CURRENT}" = "${RUST_VERSION}" ]; then
+            echo "Preinstalled toolchain ${CURRENT} already matches the pinned version; reusing it."
+            echo "preinstalled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Preinstalled ${CURRENT} differs from pinned ${RUST_VERSION}; will install and cache it."
+            echo "preinstalled=false" >> "$GITHUB_OUTPUT"
+            if ver_newer "${CURRENT}" "${RUST_VERSION}"; then
+              echo "::warning title=Rust pin is behind the runner::Runner ships Rust ${CURRENT} but RUST_VERSION pins ${RUST_VERSION}. Bump RUST_VERSION to ${CURRENT} to skip the toolchain install/cache."
+            fi
+          fi
+
+      - name: Cache the Rust toolchain
+        if: steps.toolchain.outputs.preinstalled != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # zizmor: ignore[cache-poisoning]
+        id: rustup-cache
+        with:
+          path: ~/.rustup
+          key: rustup-${{runner.os}}-${{runner.arch}}-${{env.RUST_VERSION}}
+
+      - name: Update the Rust toolchain
+        # Only when not preinstalled and the cache was not found.
+        if: steps.toolchain.outputs.preinstalled != 'true' && steps.rustup-cache.outputs.cache-hit != 'true'
+        run: rustup update --no-self-update ${RUST_VERSION}
+
+      - name: Set the default Rust toolchain
+        # Skipped when reusing the runner's preinstalled default toolchain.
+        if: steps.toolchain.outputs.preinstalled != 'true'
+        run: rustup default ${RUST_VERSION}
+
+      - name: Add Rust components
+        # Only when not preinstalled and the cache was not found.
+        if: steps.toolchain.outputs.preinstalled != 'true' && steps.rustup-cache.outputs.cache-hit != 'true'
+        run: rustup component add rustfmt clippy
+
+      - name: Display the updated Rust version and toolchains
+        run: rustup -V && rustup show --verbose && rustup component list --installed
+
+      - name: Define Cargo cache keys
+        id: keys
+        env:
+          LOCK_HASH: ${{ hashFiles('**/Cargo.lock') }}
+        run: |
+          echo "lock=$(echo "$LOCK_HASH" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          echo "rustc=${RUST_VERSION:-$(rustc --version | cut -d' ' -f2)}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Cargo crates
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # zizmor: ignore[cache-poisoning]
+        id: cargo-cache
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            target/
+          # The scheduled run gets a unique key and no `restore-keys` to always build
+          # from scratch and save a fresh cache image.
+          key: cargo-${{runner.os}}-${{runner.arch}}-${{ steps.keys.outputs.rustc }}-${{ steps.keys.outputs.lock }}${{ github.event_name == 'schedule' && format('-{0}', github.run_id) || '' }}
+          restore-keys: ${{ github.event_name != 'schedule' && format('cargo-{0}-{1}-{2}-', runner.os, runner.arch, steps.keys.outputs.rustc) || '' }}
+
+      - name: Download all dependencies
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        run: cargo fetch --locked
+
+      - name: Validate Rust formatting
+        run: cargo fmt --all --check
+
+
+      # All the next cargo commands are with `--frozen` (--locked and --offline).
+
+      - name: Test
+        run: cargo test --frozen --profile ci --all-features --workspace
+
+      - name: Check and lint with Clippy
+        run: cargo clippy --frozen --profile ci --all-features --workspace --tests -- -D warnings
+
+      - name: Prune the workspace artifacts before saving the cache
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        run: |
+          crates="$(git ls-files '*/Cargo.toml' | xargs -n1 dirname) ally-task ally-guy"
+          for crate in ${crates}; do
+            # Artifact file names use underscores, directory names use the package name.
+            file="${crate//-/_}"
+            rm -rf "target/ci/.fingerprint/${crate}-"* "target/ci/build/${crate}-"*
+            rm -f "target/ci/deps/${file}-"* "target/ci/deps/lib${file}-"* \
+              "target/ci/${crate}" "target/ci/${crate}.exe" "target/ci/${crate}.d" \
+              "target/ci/${crate}.pdb"
+          done
+          rm -rf target/ci/incremental target/ci/examples
+          du -sh target/ci
+
+
+  cache-cleanup:
+    name: Cache cleanup
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    # This needs the `gh` CLI, not available on `ubuntu-slim`.
+    runs-on: ubuntu-26.04-arm
+    permissions:
+      actions: write # Required to list and delete the cache entries of this repository.
+
+    steps:
+      - name: Delete the superseded Cargo caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/${REPO}/actions/caches?per_page=100&ref=refs/heads/main" --paginate \
+            --jq '.actions_caches[] | select(.key | startswith("cargo-")) | [.id, .key, .created_at] | @tsv' \
+            | sort -k3 -r \
+            | awk -F'\t' '{ split($2, f, "-"); g = f[1]"-"f[2]"-"f[3]"-"f[4]; if (seen[g]++) print $1, $2 }' \
+            | while read -r id key; do
+                echo "Deleting the superseded cache ${key}"
+                gh api -X DELETE "repos/${REPO}/actions/caches/${id}"
+              done
+
+
+  status:
+    name: Status check
+    needs: [changes, check, test]
+    if: always()
+    runs-on: ubuntu-slim
+    steps:
+      - name: Validate jobs status
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          echo "changes=$CHANGES_RESULT check=$CHECK_RESULT test=$TEST_RESULT"
+          if [ "$CHANGES_RESULT" = "failure" ] || [ "$CHANGES_RESULT" = "cancelled" ] \
+            || [ "$CHECK_RESULT" = "failure" ] || [ "$CHECK_RESULT" = "cancelled" ] \
+            || [ "$TEST_RESULT" = "failure" ] || [ "$TEST_RESULT" = "cancelled" ]; then
+            echo "::error::A required CI job failed or was cancelled."
+            exit 1
+          fi
+          echo "All required CI jobs passed or were skipped."
