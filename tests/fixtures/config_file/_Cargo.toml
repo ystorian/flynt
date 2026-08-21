@@ -1,0 +1,3 @@
+[package]
+name = "configured"
+[workspace]
