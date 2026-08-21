@@ -1,4 +1,4 @@
-#  .just/github.just
+# .just/github.just
 
 # Requirements:
 # gh:
