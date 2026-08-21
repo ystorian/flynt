@@ -25,7 +25,7 @@ env:
   CARGO_TERM_COLOR: always
 
   # Reduce Cargo output.
-  CARGO_TERM_QUIET: 1
+  CARGO_TERM_QUIET: true
 
   # Disable incremental compilation for faster from-scratch builds.
   CARGO_INCREMENTAL: 0
