@@ -18,11 +18,22 @@ use crate::config::Severity;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Location {
 	/// Path relative to the linted root.
+	#[serde(serialize_with = "serialize_path")]
 	pub file: PathBuf,
 	/// One-based line number.
 	pub line: usize,
 	/// One-based column number.
 	pub column: usize,
+}
+
+/// Serializes a path with forward slashes for the JSON report (platform agnostic).
+fn serialize_path<S: serde::Serializer>(path: &std::path::Path, out: S) -> Result<S::Ok, S::Error> {
+	let text = path.to_string_lossy();
+	if std::path::MAIN_SEPARATOR == '/' {
+		out.serialize_str(&text)
+	} else {
+		out.serialize_str(&text.replace(std::path::MAIN_SEPARATOR, "/"))
+	}
 }
 
 impl std::fmt::Display for Location {
@@ -303,5 +314,16 @@ mod tests {
 			column: 8,
 		};
 		assert_eq!(at.to_string(), "types/templates/home.html:42:8");
+	}
+
+	#[test]
+	fn a_serialized_path_always_uses_forward_slashes() {
+		let at = Location {
+			file: PathBuf::from("templates").join("home.html"),
+			line: 1,
+			column: 1,
+		};
+		let json = serde_json::to_value(&at).expect("the location serializes");
+		assert_eq!(json["file"], "templates/home.html");
 	}
 }
