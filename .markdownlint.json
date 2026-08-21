@@ -1,0 +1,59 @@
+// .markdownlint.json
+// Last refresh: 2026-08-04
+{
+	"default": true,
+	// Headings must use ATX style: line with 1 to 6 hashes `#` followed by 1 space.
+	"MD003": {
+		"style": "atx"
+	},
+	// Unordered list must use a dash `-`.
+	"MD004": {
+		"style": "dash"
+	},
+	// Unordered list indentation, default is 2, set to false to allow tabs.
+	"MD007": false,
+	// Allow tabs in code blocks.
+	"MD010": {
+		"code_blocks": false
+	},
+	// Multiple consecutive blank lines, default is 1, increase to 2.
+	"MD012": {
+		"maximum": 2
+	},
+	// Allow unlimited line length, leverage auto-wrap instead.
+	"MD013": false,
+	// Allow any number of blank lines above and below headings.
+	"MD022": {
+		"lines_above": -1,
+		"lines_below": -1
+	},
+	// Allow multiple blockquotes separated by a blank line.
+	"MD028": false,
+	// Allow compact lists.
+	"MD032": false,
+	// Allow some inline HTML tags.
+	"MD033": {
+		"allowed_elements": [
+			// Allow inline HTML for <img>.
+			"img",
+			// Allow inline HTML for <button>.
+			"button"
+		]
+	},
+	// Allow emphasis (bold) text as sub-heading.
+	"MD036": false,
+	// Disable heading requirements.
+	"MD041": false,
+	// Do not require alt-text for images.
+	"MD045": false,
+	// Use undercores for _emphasis_ (italic).
+	"MD049": {
+		"style": "underscore"
+	},
+	// Use 2 asterisks for **strong** (bold).
+	"MD050": {
+		"style": "asterisk"
+	},
+	// Allow tabs.
+	"no-hard-tabs": false
+}

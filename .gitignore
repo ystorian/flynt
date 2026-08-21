@@ -1,0 +1,37 @@
+# .gitignore
+# Last refresh: 2026-07-25
+
+# macOS:
+# Finder thumbnail files and icons.
+*~
+*.DS_Store
+# Finder icons `Icon\r`.
+Icon?
+# Un-ignore non-macOS icons.
+![iI]con[_a-zA-Z0-9]
+
+# Windows:
+# Explorer icons cache.
+Thumbs.db
+
+# Security:
+# Project environment variables (may contain secrets).
+.env
+
+# Rust:
+# cargo compiled files and executables.
+/target
+# rustfmt backup files.
+*.rs.bk
+
+# Directories, including subdirectories:
+# Local logs.
+logs/
+# PHP Composer modules:
+vendor/
+# JS/TS Node modules:
+node_modules/
+# Just cache for cached scripts.
+.justcache/
+
+# Important: Do not ignore `tests/`, it contains the fixtures for `cargo test`!

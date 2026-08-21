@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+#
+# .githooks/pre-commit
+#
+# Install git pre-commit hooks in your local repo with `just install_git_hooks`.
+
+# .just/git.just
+just precommit_just
+
+# .just/cargo.just
+just precommit_cargo

@@ -1,0 +1,50 @@
+# .editorconfig
+# Last refresh: 2026-03-23
+
+# top-most EditorConfig file.
+root = true
+
+# All files.
+[*]
+
+# Set default charset to utf-8.
+charset = utf-8
+
+# Unix-style newlines with a newline ending every file.
+end_of_line = lf
+insert_final_newline = true
+
+# Remove trailing whitespace.
+trim_trailing_whitespace = true
+
+# Use tab indentation.
+indent_style = tab
+
+# Tab width will use the editor default.
+tab_width = unset
+
+# Set the line length to 100 characters.
+max_line_length = 100
+
+
+# Specific file format.
+
+# Markdown.
+[**.md]
+# Do not remove trailing whitespace for Markdown files.
+trim_trailing_whitespace = false
+
+# Fluent.
+[*.flt]
+indent_size = 2
+indent_style = space
+
+# Typescript.
+[*.ts]
+quote_type = single
+indent_brace_style = K&R
+
+# YAML.
+[*.{yml,yaml}]
+indent_size = 2
+indent_style = space
