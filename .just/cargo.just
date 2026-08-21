@@ -156,14 +156,12 @@ check_tag tag=tag:
 	;fi
 
 	# Local branch is `main`.
-	echo "{{ dim('- local branch name') }}"
 	if [ "$(git branch --show-current)" != "{{ main_branch }}" ]; then \
 		echo "{{ error(['Not on the', GREEN + main_branch, 'branch:', RED + shell('git branch --show-current')]) }}" && \
 		exit 1 \
 	;fi
 
 	# Local branch is remote branch.
-	echo "{{ dim('- remote branch name') }}"
 	git fetch --quiet origin {{ main_branch }}
 	if [ "$(git rev-parse {{ main_branch }})" != "$(git rev-parse origin/{{ main_branch }})" ]; then \
 		echo "{{ error(['The local', BOLD + main_branch, 'branch differs from', BOLD + 'origin/' + main_branch]) }}" && \
@@ -188,6 +186,8 @@ check_tag tag=tag:
 		git status --porcelain && \
 		exit 1 \
 	;fi
+
+	echo {{ done('') }}
 
 # Push an annotated release tag `v#.#.#`
 [group('Cargo')]

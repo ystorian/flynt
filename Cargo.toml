@@ -16,6 +16,7 @@ publish = true
 exclude = [
 	".editorconfig",
 	".gitignore",
+	".githooks",
 	".github",
 	".just",
 	".markdownlint.json",
