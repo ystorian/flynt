@@ -1,4 +1,4 @@
-# Flynt
+# <img src="https://raw.githubusercontent.com/ystorian/flynt/main/flynt.svg" width="32" align="absbottom" alt="Flynt logo"> Flynt
 
 **Linter for Fluent translation keys in Rust projects using Askama templates**
 

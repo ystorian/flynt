@@ -1,0 +1,4 @@
+# .rustfmt.toml
+
+# Use tabs. This is the way.
+hard_tabs = true
