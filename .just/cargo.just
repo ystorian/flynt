@@ -200,6 +200,8 @@ check_tag tag=tag allow_dirty='false':
 		;fi \
 	;fi
 
+	echo "{{ NORMAL + GREEN }}Ready to tag for release: {{ BOLD + repo }} {{ tag + NORMAL }}"
+
 # Push an annotated release tag `v#.#.#`
 [arg('allow_dirty', long='allow-dirty', value='--allow-dirty')]
 [group('Cargo')]

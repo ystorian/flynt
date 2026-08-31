@@ -2,15 +2,14 @@
 
 [package]
 name = "flynt"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 # rust-version = "1.85"
 description = "Fluent linter for Askama templates"
 license = "MIT OR Apache-2.0"
-authors = ["Flavien Scheurer <flavien+flynt@ystorian.com>"]
 repository = "https://github.com/ystorian/flynt"
 readme = "README.md"
-keywords = ["fluent", "ftl", "i18n", "l10n", "linter", "askama"]
+keywords = ["fluent", "i18n", "l10n", "linter", "askama"]
 categories = ["development-tools", "internationalization", "command-line-utilities"]
 publish = true
 include = ["src/**/*.rs", "Cargo.toml", "Cargo.lock", "./README.md", "LICENSE-*"]
