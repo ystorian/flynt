@@ -1,6 +1,6 @@
-# <img src="https://raw.githubusercontent.com/ystorian/flynt/main/flynt.svg" width="32" align="absbottom" alt="Flynt logo"> Flynt
+# <img src="https://raw.githubusercontent.com/ystorian/flynt/main/flynt.svg" width="48" align="absmiddle" alt="Flynt logo"> Flynt
 
-**Linter for Fluent translation keys in Rust projects using Askama templates**
+**Fluent linter for Askama templates**
 
 ![Build Status](https://github.com/ystorian/flynt/actions/workflows/ci-rust.yaml/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/flynt.svg)](https://crates.io/crates/flynt)

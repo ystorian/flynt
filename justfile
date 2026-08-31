@@ -1,5 +1,8 @@
 # justfile
 
+# Set the minimum Just version.
+set minimum-version := '1.58.0'
+
 # Set the default shell on Windows to `bash` (installed with Git).
 set windows-shell := ['C:\Program Files\Git\bin\bash.exe', '-cu']
 

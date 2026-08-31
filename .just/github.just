@@ -1,18 +1,5 @@
 # .just/github.just
 
-# Requirements:
-# gh:
-# - macOS: `brew install gh`
-# - Windows: `winget install --id GitHub.cli`
-# jq:
-# - macOS: native, or `brew install jq`
-# - Windows: `winget install --id jqlang.jq`
-# zizmor:
-# - `just install_cargo_tools`
-# pinact:
-# - macOS: `brew install pinact`
-# - Windows: `winget install --id suzuki-shunsuke.pinact`
-
 # Variables.
 # Return the repository name.
 repo := if which("gh") == [] { '' } else { shell("gh repo view --json name --jq '.name'") }
@@ -29,10 +16,14 @@ github_token := if which("gh") == [] { '' } else { shell('gh auth token') }
 audit_actions:
 	echo {{ CYAN }}Audit actions in {{ GREEN }}.github/workflows/*.yaml{{ NORMAL }}
 	just check_command_zizmor
-	zizmor \
-		--no-progress \
-		{{ if github_token != '' { '--gh-token ' + github_token } }} \
-		--persona=auditor .
+	if [ -d ".github/workflows" ]; then \
+		zizmor \
+			--no-progress \
+			{{ if github_token != '' { '--gh-token ' + github_token } }} \
+			--persona=auditor . \
+	;else \
+		echo "{{ warning('No actions in .github/workflows') }}" \
+	;fi
 	echo {{ done('') }}
 
 # Update and pin action versions with cooldown
@@ -104,10 +95,10 @@ env_list_secrets_all repo=repo:
 	echo {{ YELLOW }}Secrets should be restricted to environments!{{ NORMAL }}
 	echo {{ done('') }}
 
-# Add an action secret to an environment
+# Add to an environment an action `secret`
 [group('GitHub Actions')]
-env_set_secret secret env='production':
-	echo {{ CYAN }}Add the {{ BOLD }}action secret {{ NORMAL + YELLOW + uppercase(secret) + CYAN }} to the  {{ BOLD + env + NORMAL + CYAN }} environment in {{ GREEN + owner + '/' + repo + NORMAL }}
+env_set_secret env secret:
+	echo {{ CYAN }}Add the action secret {{ BOLD + YELLOW + uppercase(secret) + NORMAL + CYAN }} to the {{ YELLOW + env + CYAN }} environment in {{ GREEN + owner + '/' + repo + NORMAL }}
 	just check_command_gh
 	gh \
 		secret \
@@ -122,33 +113,28 @@ env_set_secret secret env='production':
 create_env repo=repo env='production':
 	echo {{ CYAN }}Create the {{ YELLOW + env + CYAN }} environment in {{ GREEN + owner + '/' + repo + NORMAL }}
 	just check_command_gh
-	echo "{{ dim('Created at: ' + shell("
-		gh \
-			api \
-			--method PUT \
-			repos/{owner}/{{repo}}}/environments/{{env}} \
-			--jq '.created_at'
-		")) }}"
+	gh \
+		api \
+		--method PUT \
+		repos/{{ owner }}/{{ repo }}/environments/{{ env }} \
+		--jq '.created_at'
 
 	echo {{ CYAN }}Set a custom branch policy{{ NORMAL }}
-	echo "{{ dim('Custom branch policies: ' + shell("
-		gh \
-			api \
-			--method PUT repos/{owner}/{{repo}}}/environments/{{env}} \
-			--field deployment_branch_policy[protected_branches]=false \
-			--field deployment_branch_policy[custom_branch_policies]=true \
-			--jq '.deployment_branch_policy.custom_branch_policies'
-		")) }}"
+	gh \
+		api \
+		--method PUT repos/{{ owner }}/{{ repo }}/environments/{{ env }} \
+		--field deployment_branch_policy[protected_branches]=false \
+		--field deployment_branch_policy[custom_branch_policies]=true \
+		--jq '.deployment_branch_policy.custom_branch_policies'
 
 	echo {{ CYAN }}Set the branch protection to the {{ GREEN + main_branch + CYAN }} branch{{ NORMAL }}
-	echo "{{ dim('Branch policies: ' + shell("
-		gh \
-			api \
-			--method POST \
-			repos/{owner}/{repo}/environments/{{env}}/deployment-branch-policies \
-			--field name=main \
-			--jq '.total_count'
-		")) }}"
+	gh \
+		api \
+		--method POST \
+		repos/{{ owner }}/{{ repo }}/environments/{{ env }}/deployment-branch-policies \
+		--field name=main \
+		--jq '.total_count'
+
 	echo {{ done('') }}
 
 # List the environments
@@ -156,8 +142,7 @@ create_env repo=repo env='production':
 list_envs repo=repo:
 	echo {{ CYAN }}List environments in {{ GREEN + owner }}/{{ BOLD + repo + NORMAL }}
 	just check_command_gh
-	gh api repos/{owner}/{{ repo }}/environments --jq '.environments[].name'
-	echo {{ done('') }}
+	gh api repos/{{ owner }}/{{ repo }}/environments --jq '.environments[].name'
 
 ## Check commands.
 
@@ -171,7 +156,7 @@ check_command_gh:
 [group('GitHub Actions')]
 [private]
 check_command_jq:
-	just check_command gh 'brew install jq' 'winget install --id jqlang.jq'
+	just check_command jq 'brew install jq' 'winget install --id jqlang.jq'
 
 # Check if `pinact` is available
 [group('GitHub Actions')]
