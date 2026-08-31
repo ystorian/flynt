@@ -1,10 +1,12 @@
 # .just/git.just
 
 # Variables.
-pre_commit_script := '''
+git_hooks_dir := '.githooks'
+pre_commit_file := git_hooks_dir + '/pre-commit'
+pre_commit_script := f'''
 	#!/usr/bin/env sh
 	#
-	# .githooks/pre-commit
+	# {{ pre_commit_file }}
 	#
 	# Install git pre-commit hooks in your local repo with `just install_git_hooks`.
 
@@ -12,42 +14,77 @@ pre_commit_script := '''
 	just precommit_just
 '''
 
-# Install the git hooks from `.githooks`
+# Install the git hooks in `.githooks`
 [group('Git')]
 [no-exit-message]
 install_git_hooks:
-	echo {{ CYAN }}Install git hooks from {{ GREEN }}.githooks{{ NORMAL }}
-	if [ ! -d ".githooks" ]; then \
-		echo "{{ error('Directory not found: ' + BOLD + '.githooks') }}" && \
+	echo {{ CYAN }}Install git hooks in the {{ GREEN + git_hooks_dir + CYAN }} directory{{ NORMAL }}
+	if [ ! -d "{{ git_hooks_dir }}" ]; then \
+		echo "{{ error(['Directory not found:', BOLD + git_hooks_dir]) }}" && \
 		echo "{{ dim(['Create an initial pre-commit script with', NORMAL + MAGENTA + 'just create_precommit_script']) }}" && \
 		exit 1 \
 	;fi
 
-	if [ ! -f ".githooks/pre-commit" ]; then \
-		echo "{{ error('Script not found: ' + BOLD + '.githooks/pre-commit') }}" && \
+	if [ ! -f "{{ pre_commit_file }}" ]; then \
+		echo "{{ error('Script not found: ' + BOLD + pre_commit_file) }}" && \
 		echo "{{ dim(['Create an initial pre-commit script with', NORMAL + MAGENTA + 'just create_precommit_script']) }}" && \
 		exit 1 \
 	;fi
 
-	git config core.hooksPath .githooks
-	echo "{{ dim(GREEN + 'Git hooks path set to ' + BOLD + GREEN + '.githooks') }}"
+	git config set core.hooksPath {{ git_hooks_dir }}
+
+	echo "{{ dim(GREEN + 'Git hooks path set to ' + BOLD + GREEN + git_hooks_dir) }}"
 	echo {{ done('') }}
+
+# Check if git hooks are installed
+[group('Git')]
+[no-exit-message]
+check_git_hooks:
+	echo {{ CYAN }}Check {{ GREEN }}git hooks{{ NORMAL }}
+	if [ ! -d "{{ git_hooks_dir }}" ]; then \
+		echo "{{ warning(['Directory not found:', RED + BOLD + git_hooks_dir]) }}" \
+	;else \
+		echo "{{ dim(['Directory exists:', GREEN + git_hooks_dir]) }}" \
+	;fi
+
+	if [ ! -f "{{ pre_commit_file }}" ]; then \
+		echo "{{ warning(['Pre-commit script not found:', RED + BOLD + pre_commit_file]) }}" \
+	;else \
+		echo "{{ dim(['Pre-commit script:', GREEN + pre_commit_file]) }}" \
+	;fi
+
+	hooks_path="$(git config get core.hooksPath || true)"; \
+	if [ -z "$hooks_path" ]; then \
+		echo "{{ warning(['Local git hook config not set']) }}" \
+	;elif [ "$hooks_path" != "{{ git_hooks_dir }}" ]; then \
+		echo "{{ warning(['Local git hook path not set to', RED + BOLD + git_hooks_dir]) }}" && \
+		echo "{{ dim(['Configured git hook path:', YELLOW + BOLD + '$hooks_path']) }}" \
+	;else \
+		echo "{{ dim(['Local git hook config set to', GREEN + git_hooks_dir]) }}" \
+	;fi
+
+	echo {{ CYAN + ITALIC }}Create a pre-commit script with: \
+		{{ MAGENTA }}just create_precommit_script{{ NORMAL }}
+	echo {{ CYAN + ITALIC }}Enable the pre-commit hook with: \
+		{{ MAGENTA }}just install_git_hooks{{ NORMAL }}
 
 # Create an initial git pre-commit hook script.
 [group('Git')]
 [no-exit-message]
 create_precommit_script:
-	echo {{ CYAN }}Create an initial script {{ GREEN }}.githooks/pre-commit{{ NORMAL }}
-	just create_dir .githooks
-	if [ ! -f ".githooks/pre-commit" ]; then \
-		just create_file .githooks/pre-commit && \
-		just write_file .githooks/pre-commit '{{ pre_commit_script }}' \
+	echo {{ CYAN }}Create an initial script {{ YELLOW + pre_commit_file + NORMAL }}
+	just create_dir {{ git_hooks_dir }}
+	if [ ! -f "{{ pre_commit_file }}" ]; then \
+		just create_file {{ pre_commit_file }} && \
+		just write_file {{ pre_commit_file }} '{{ pre_commit_script }}' \
 	;else \
 		echo "{{ dim(YELLOW + 'Pre-commit script already exist') }}" \
 	;fi
-	chmod +x .githooks/pre-commit && \
-		echo "{{ dim(['Set the', BOLD + 'execute', 'bit on', BOLD + '.githooks/pre-commit']) }}"
-	echo "{{ dim(['Install git hooks on your local repo with', NORMAL + MAGENTA + 'just install_git_hooks']) }}"
+	chmod +x {{ pre_commit_file }} && \
+		echo "{{ dim(['Set the', BOLD + 'execute', 'bit on', BOLD + pre_commit_file]) }}"
+
+	echo {{ GREEN }}Pre-commit script ready{{ NORMAL }}
+	echo "{{ warning(['Enable git hooks with', NORMAL + MAGENTA + 'just install_git_hooks']) }}"
 
 # Git pre-commit hook for Just
 [group('Git')]
