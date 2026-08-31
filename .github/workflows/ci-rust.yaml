@@ -37,7 +37,7 @@ env:
   #
   # - leave empty to use the runner's preinstalled toolchain (no rustup cache or download)
   # - set it to a version (e.g. "1.97") to install and pin that version.
-  RUST_VERSION: "1.85"
+  RUST_VERSION: ""
 
   # Link with LLVM's lld-link on Windows, faster than the default linker.
   CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
