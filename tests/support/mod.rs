@@ -18,15 +18,15 @@ const RENAMED: &[(&str, &str)] = &[
 	("_flynt.toml", ".flynt.toml"),
 ];
 
-/// Marks a directory that must exist and stay empty.
+/// Marks a directory that must stay empty.
 const KEEP_DIR: &str = "_gitkeep";
 
-/// Fixture trees already copied by this test binary.
+/// Fixture trees already copied this run.
 static MATERIALIZED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
-/// Absolute path of a usable copy of a fixture tree.
+/// Absolute path of a usable fixture copy.
 pub fn fixture(name: &str) -> PathBuf {
-	// `CARGO_TARGET_TMPDIR` is a scratch directory under the target directory.
+	// A scratch directory under target.
 	let target = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
 		.join(env!("CARGO_CRATE_NAME"))
 		.join(name);
@@ -95,7 +95,7 @@ pub fn config_with(name: &str, adjust: impl FnOnce(&mut PartialConfig)) -> Confi
 	config::load(&cli).unwrap_or_else(|e| panic!("cannot configure the {name:?} fixture: {e:#}"))
 }
 
-/// Loads the configuration for a fixture using only its own defaults.
+/// Loads a fixture's configuration with only defaults.
 pub fn config(name: &str) -> Config {
 	config_with(name, |_| {})
 }
@@ -106,13 +106,13 @@ pub fn check(name: &str) -> Report {
 	flynt::check(&config).unwrap_or_else(|e| panic!("cannot check the {name:?} fixture: {e:#}"))
 }
 
-/// Runs every check against a fixture with an adjusted configuration.
+/// Runs every check with an adjusted configuration.
 pub fn check_with(name: &str, adjust: impl FnOnce(&mut PartialConfig)) -> Report {
 	let config = config_with(name, adjust);
 	flynt::check(&config).unwrap_or_else(|e| panic!("cannot check the {name:?} fixture: {e:#}"))
 }
 
-/// Asserts a report has no findings of any kind.
+/// Asserts a report has no findings.
 pub fn assert_clean(report: &Report) {
 	assert!(
 		report.missing_keys.is_empty(),

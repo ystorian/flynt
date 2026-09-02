@@ -29,10 +29,6 @@ impl Found {
 }
 
 /// Builds an alternation of the configured helper names.
-///
-/// Names are sorted longest first. For example, `loc_with_args` is preferred over `loc`.
-///
-/// Returns `None` when there are no names.
 fn alternation(names: &[String]) -> Option<String> {
 	if names.is_empty() {
 		return None;
@@ -63,12 +59,12 @@ mod tests {
 	}
 
 	#[test]
-	fn no_names_means_no_pattern() {
+	fn no_names_no_pattern() {
 		assert!(alternation(&[]).is_none());
 	}
 
 	#[test]
-	fn longer_names_come_first_so_they_win() {
+	fn longer_names_win() {
 		assert_eq!(
 			alternation(&names(&["loc", "loc_with_args"])).as_deref(),
 			Some("loc_with_args|loc")
@@ -76,7 +72,7 @@ mod tests {
 	}
 
 	#[test]
-	fn equal_length_names_are_ordered_for_determinism() {
+	fn equal_length_names_ordered() {
 		assert_eq!(
 			alternation(&names(&["tn", "xy", "ab"])).as_deref(),
 			Some("ab|tn|xy")
@@ -84,7 +80,7 @@ mod tests {
 	}
 
 	#[test]
-	fn regex_metacharacters_in_a_name_are_escaped() {
+	fn metacharacters_are_escaped() {
 		let alts = alternation(&names(&["t.t"])).expect("one name yields a pattern");
 		assert_eq!(alts, r"t\.t");
 		let re = compile(&format!("^(?:{alts})$"), "test").expect("the pattern compiles");

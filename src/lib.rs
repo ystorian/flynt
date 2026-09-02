@@ -1,22 +1,9 @@
 // src/lib.rs
 
-//! Lint Fluent translation keys against their use in Rust code and Askama templates.
+//! Lints Fluent translation keys against their use in Rust code and Askama templates.
 //!
 //! Keys used in templates `{{ "key" | t(&lang) }}` and in Rust `loc("key", &lang)` are collected
-//! and compared against the `.ftl` files. A typo then fails the build instead of shipping the key
-//! name as user-facing text.
-//!
-//! flynt infers what to scan from the target repository. Workspace members come from its
-//! `Cargo.toml`. Locales come from the subdirectories of its locales directory. Every default can
-//! be overridden, on the command line or in a `.flynt.toml`.
-//!
-//! # Checks
-//!
-//! - coverage: a used key is defined in every locale.
-//! - consistency: every locale defines the same set of keys.
-//! - duplicates: no locale defines a key twice.
-//! - unused: every defined key is referenced somewhere. This is a warning by default.
-//! - syntax: every `.ftl` file parses.
+//! and compared against the `.ftl` files in the `locales` directory.
 //!
 //! # Example
 //!
@@ -53,17 +40,15 @@ pub use model::{
 	Report, SCHEMA_VERSION, Summary, UnusedKey, UsageType,
 };
 
-/// Runs every check and returns the report. Performs no output.
-///
-/// Rendering is [`report::render`]'s job. This lets a caller embedding flynt act on the findings
-/// instead of parsing text.
+/// Runs every check and returns the report.
 ///
 /// # Errors
 ///
-/// Returns an error for tool-level problems only. This includes: a directory that cannot be walked,
-/// a file that is not valid UTF-8, an invalid glob, a missing locales directory (unless
-/// `require_locales` is off), or a tree with nothing at all to check. Lint findings are carried in
-/// the [`Report`], not returned as errors.
+/// - The directory cannot be walked.
+/// - A file is not valid UTF-8.
+/// - A glob pattern is invalid.
+/// - The `locales` directory is missing.
+/// - Nothing exists to check.
 pub fn check(config: &Config) -> anyhow::Result<Report> {
 	check::run(config)
 }

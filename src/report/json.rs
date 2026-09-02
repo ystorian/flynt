@@ -8,7 +8,7 @@ use std::io::Write;
 
 use crate::model::Report;
 
-/// Writes the report as pretty-printed JSON, with a trailing newline.
+/// Writes the JSON report, prettified with a trailing newline.
 ///
 /// # Errors
 ///
@@ -94,7 +94,7 @@ mod tests {
 	}
 
 	#[test]
-	fn the_shape_is_exactly_as_documented() {
+	fn matches_documented_format() {
 		assert_eq!(
 			value(&full()),
 			json!({
@@ -140,21 +140,21 @@ mod tests {
 	}
 
 	#[test]
-	fn the_severity_is_not_serialized() {
-		// The severity decides the exit code. It is not part of the report data.
+	fn severity_not_serialized() {
+		// The severity decides the exit code.
 		let object = value(&full());
 		assert!(object.get("unused_severity").is_none());
 	}
 
 	#[test]
-	fn the_output_ends_with_a_newline() {
+	fn output_ends_with_newline() {
 		let mut out = Vec::new();
 		render(&full(), &mut out).expect("writing to a Vec cannot fail");
 		assert_eq!(out.last(), Some(&b'\n'));
 	}
 
 	#[test]
-	fn rendering_twice_gives_identical_bytes() {
+	fn render_twice_is_identical() {
 		let report = full();
 		let mut a = Vec::new();
 		let mut b = Vec::new();

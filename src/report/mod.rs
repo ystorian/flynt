@@ -1,9 +1,6 @@
 // src/report/mod.rs
 
-//! Rendering a [`Report`].
-//!
-//! Nothing here writes to `stdout` directly. Every renderer takes an [`std::io::Write`] instead.
-//! Tests can then assert on the output.
+//! Rendering for the report.
 
 pub mod json;
 pub mod text;
@@ -17,8 +14,7 @@ use crate::model::Report;
 ///
 /// # Errors
 ///
-/// Propagates write failures from `out`. Also propagates serialization failures from the JSON
-/// renderer.
+/// Propagates write or serialization failures.
 pub fn render(
 	report: &Report,
 	config: &Config,
@@ -81,7 +77,7 @@ impl Paint {
 		self.wrap("2", text)
 	}
 
-	/// Wraps `text` as underlined cyan, marking it as a source location.
+	/// Wraps `text` as an underlined link.
 	pub(crate) fn link(&self, text: &str) -> String {
 		if self.on {
 			format!("\x1b[4;36m{text}\x1b[0m")
@@ -90,10 +86,7 @@ impl Paint {
 		}
 	}
 
-	/// Wraps `prefix` and `suffix` in green, with `bold_part` bold in between.
-	///
-	/// A plain nested wrap would not work: the bold segment's reset code would also clear the
-	/// surrounding green.
+	/// Wraps prefix/suffix in green, `bold_part` bold.
 	pub(crate) fn green_bold(&self, prefix: &str, bold_part: &str, suffix: &str) -> String {
 		if self.on {
 			format!("\x1b[32m{prefix}\x1b[1m{bold_part}\x1b[0m\x1b[32m{suffix}\x1b[0m")
@@ -117,19 +110,19 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn always_and_never_ignore_the_terminal() {
+	fn always_never_ignore_terminal() {
 		assert!(color_enabled(ColorChoice::Always, false));
 		assert!(!color_enabled(ColorChoice::Never, true));
 	}
 
 	#[test]
 	fn auto_needs_a_terminal() {
-		// NO_COLOR is not set in the test environment. A terminal decides instead.
+		// NO_COLOR is unset; the terminal decides.
 		assert!(!color_enabled(ColorChoice::Auto, false));
 	}
 
 	#[test]
-	fn paint_is_a_no_op_when_off() {
+	fn paint_noop_when_off() {
 		let plain = Paint::new(false);
 		assert_eq!(plain.red("x"), "x");
 		assert_eq!(plain.bold("x"), "x");

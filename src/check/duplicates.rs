@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use crate::model::{DuplicateKey, LocaleKeys};
 
-/// Finds keys defined more than once within a single locale.
+/// Finds keys defined more than once.
 #[must_use]
 pub fn duplicates(locales: &BTreeMap<String, LocaleKeys>) -> Vec<DuplicateKey> {
 	let mut findings = Vec::new();
@@ -36,13 +36,13 @@ mod tests {
 	use crate::check::tests::{locale, locale_with};
 
 	#[test]
-	fn a_key_defined_once_is_not_reported() {
+	fn key_defined_once() {
 		let locales = BTreeMap::from([("en".to_owned(), locale("en", &["a", "b"]))]);
 		assert!(duplicates(&locales).is_empty());
 	}
 
 	#[test]
-	fn two_definitions_in_different_files_are_reported() {
+	fn definitions_in_different_files() {
 		let locales = BTreeMap::from([(
 			"en".to_owned(),
 			locale_with("en", &[("dup", &[("a.ftl", 3), ("b.ftl", 9)])]),
@@ -55,7 +55,7 @@ mod tests {
 	}
 
 	#[test]
-	fn two_definitions_in_the_same_file_point_at_different_lines() {
+	fn same_file_different_lines() {
 		let locales = BTreeMap::from([(
 			"en".to_owned(),
 			locale_with("en", &[("dup", &[("a.ftl", 1), ("a.ftl", 7)])]),
@@ -66,7 +66,7 @@ mod tests {
 	}
 
 	#[test]
-	fn each_locale_is_reported_separately() {
+	fn locales_reported_separately() {
 		let locales = BTreeMap::from([
 			(
 				"en".to_owned(),
@@ -84,7 +84,7 @@ mod tests {
 	}
 
 	#[test]
-	fn findings_are_sorted_by_key_then_locale() {
+	fn findings_sorted_by_key_locale() {
 		let locales = BTreeMap::from([
 			(
 				"fr".to_owned(),

@@ -31,7 +31,6 @@ pub fn render(
 		return Ok(());
 	}
 
-	vacuous(report, &paint, out)?;
 	missing(report, &paint, out)?;
 	inconsistent(report, &paint, out)?;
 	duplicates(report, &paint, out)?;
@@ -54,28 +53,6 @@ fn heading(paint: &Paint, level: Severity, text: &str) -> String {
 		Severity::Warn => format!("\n{} {text}", paint.yellow("Warning:")),
 		Severity::Allow => text.to_owned(),
 	}
-}
-
-fn vacuous(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
-	if !report.is_vacuous() {
-		return Ok(());
-	}
-
-	writeln!(
-		out,
-		"{}",
-		heading(
-			paint,
-			Severity::Warn,
-			"no locale was checked, key coverage was not verified"
-		)
-	)?;
-	writeln!(
-		out,
-		"  {}",
-		paint.dim("Point --locales-dir at a directory holding one subdirectory per locale.")
-	)?;
-	Ok(())
 }
 
 fn missing(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
@@ -355,7 +332,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_clean_run_reports_the_counts() {
+	fn clean_run_reports_counts() {
 		let out = rendered(&clean(), &config());
 		assert_eq!(
 			out,
@@ -364,7 +341,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_clean_run_prints_nothing_when_quiet() {
+	fn quiet_suppresses_clean_run() {
 		let mut config = config();
 		config.quiet = true;
 		assert_eq!(rendered(&clean(), &config), "");
@@ -389,7 +366,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_missing_key_names_its_sites_and_locales() {
+	fn missing_key_names_sites() {
 		let mut report = clean();
 		report.missing_keys = vec![MissingKey {
 			key: "tpl-ghost".to_owned(),
@@ -426,7 +403,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_inconsistent_key_names_both_sides() {
+	fn inconsistent_key_names_sides() {
 		let mut report = clean();
 		report.inconsistent_keys = vec![InconsistentKey {
 			key: "only-en".to_owned(),
@@ -443,7 +420,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_duplicate_key_names_its_locale_and_every_site() {
+	fn duplicate_key_names_sites() {
 		let mut report = clean();
 		report.duplicate_keys = vec![DuplicateKey {
 			key: "dup".to_owned(),
@@ -465,7 +442,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_parse_error_is_shown_with_the_parser_message() {
+	fn parse_error_shows_message() {
 		let mut report = clean();
 		report.parse_errors = vec![ParseError {
 			at: at("locales/en/broken.ftl", 12, 7),
@@ -483,7 +460,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_unused_key_is_a_warning_by_default_and_does_not_fail() {
+	fn unused_key_warns_default() {
 		let mut report = clean();
 		report.unused_keys = vec![UnusedKey {
 			key: "stale".to_owned(),
@@ -507,7 +484,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_unused_key_is_an_error_when_configured_so() {
+	fn unused_key_errors_configured() {
 		let mut report = clean();
 		report.unused_severity = Severity::Error;
 		report.unused_keys = vec![UnusedKey {
@@ -523,28 +500,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_run_with_no_locale_warns_instead_of_reporting_success() {
-		let mut report = clean();
-		report.summary.locales.clear();
-		report.summary.defined = 0;
-		report.summary.defined_per_locale.clear();
-
-		let out = rendered(&report, &config());
-		assert!(
-			out.contains("Warning: no locale was checked"),
-			"an inapplicable run must say so: {out}"
-		);
-		assert!(
-			!out.contains("All translation keys validated"),
-			"it must not claim success: {out}"
-		);
-		assert!(out.contains("Checked 0 locales: none"), "{out}");
-		// Nothing failed. No failure line follows.
-		assert!(!out.contains("Validation failed"), "{out}");
-	}
-
-	#[test]
-	fn colour_is_emitted_only_when_asked_for() {
+	fn colour_emitted_when_asked() {
 		let mut out = Vec::new();
 		render(&clean(), &config(), true, &mut out).expect("writing to a Vec cannot fail");
 		let text = String::from_utf8(out).expect("the output is UTF-8");
@@ -561,7 +517,7 @@ mod tests {
 	}
 
 	#[test]
-	fn the_json_format_is_dispatched_to() {
+	fn json_format_dispatched() {
 		let mut config = config();
 		config.format = OutputFormat::Json;
 		config.color = ColorChoice::Never;

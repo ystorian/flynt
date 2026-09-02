@@ -1,10 +1,6 @@
 // src/config/partial.rs
 
-//! The struct that is both the CLI and the `.flynt.toml` schema.
-//!
-//! Derives `clap::Parser` and `serde::Deserialize` on a single type to keep a flag and its
-//! configuration-file key in sync. Every field is an `Option`. `None` means "not specified at this
-//! layer".
+//! The CLI and `.flynt.toml` schema.
 
 use std::path::PathBuf;
 
@@ -19,10 +15,8 @@ use super::{ColorChoice, OutputFormat, Severity};
 #[command(
 	name = "flynt",
 	version,
-	about = "Lint Fluent translation keys against their use in Rust code and Askama templates",
-	after_help = "Defaults are inferred from the target repository: workspace members from \
-	              Cargo.toml, locales from the subdirectories of the locales directory. Any \
-	              default can be overridden here or in a .flynt.toml at the root."
+	about = "Fluent keys linter for Askama templates",
+	after_help = "Defaults come from the repository, can be overriden in .flynt.toml."
 )]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct PartialConfig {
@@ -48,34 +42,33 @@ pub struct PartialConfig {
 	pub manifest_path: Option<PathBuf>,
 
 	// ---- locales ----
-	/// Directory holding one subdirectory per locale [default: locales]
+	/// Directory holding locales [default: locales]
 	#[arg(long, value_name = "DIR")]
 	pub locales_dir: Option<PathBuf>,
 
-	/// Locale to check; repeatable [default: every subdirectory of the locales directory]
-	#[arg(long = "locale", value_name = "LOCALE")]
-	#[serde(alias = "locale")]
+	/// Locale to check; repeatable [default: every locale]
+	#[arg(long, value_name = "LOCALE")]
 	pub locales: Option<Vec<String>>,
 
-	/// Locale the unused-key check runs against [default: en, else the first sorted]
+	/// Reference locale for the unused-key check [default: en]
 	#[arg(long, value_name = "LOCALE")]
 	pub reference_locale: Option<String>,
 
 	// ---- sources ----
-	/// Rust source directory to scan; repeatable, replaces the inferred set
+	/// Rust source directories to scan (replaces defaults)
 	#[arg(long = "src", value_name = "DIR")]
 	pub src: Option<Vec<PathBuf>>,
 
-	/// Extra Rust source directory; repeatable, added to the inferred set
+	/// Extra Rust source directory (adds to defaults)
 	#[arg(long, value_name = "DIR")]
 	pub add_src: Option<Vec<PathBuf>>,
 
 	// ---- templates ----
-	/// Template directory to scan; repeatable, replaces the inferred set
+	/// Template directories to scan (replaces defaults)
 	#[arg(long = "templates", value_name = "DIR")]
 	pub templates: Option<Vec<PathBuf>>,
 
-	/// Extra template directory; repeatable, added to the inferred set
+	/// Extra template directory (adds to defaults)
 	#[arg(long, value_name = "DIR")]
 	pub add_templates: Option<Vec<PathBuf>>,
 
@@ -84,18 +77,16 @@ pub struct PartialConfig {
 	pub template_ext: Option<Vec<String>>,
 
 	// ---- helper names ----
-	/// Askama filter that takes a key as its input; repeatable [default: t, tn]
-	#[arg(long = "filter", value_name = "NAME")]
-	#[serde(alias = "filter")]
+	/// Askama filter taking a key [default: t, tn]
+	#[arg(long, value_name = "NAME")]
 	pub filters: Option<Vec<String>>,
 
-	/// Rust function that takes a key as its first argument; repeatable [default: loc, loc_with_args]
-	#[arg(long = "function", value_name = "NAME")]
-	#[serde(alias = "function")]
+	/// Rust function taking a key [default: loc, loc_with_args]
+	#[arg(long, value_name = "NAME")]
 	pub functions: Option<Vec<String>>,
 
 	// ---- checks ----
-	/// Severity for keys that are defined but never used [default: warn]
+	/// Severity for unused keys [default: warn]
 	#[arg(long, value_enum, value_name = "LEVEL")]
 	pub unused: Option<Severity>,
 
@@ -103,20 +94,12 @@ pub struct PartialConfig {
 	#[arg(long, value_name = "GLOB")]
 	pub ignore_unused: Option<Vec<String>>,
 
-	/// Treat `key.attribute` as a defined key [default: true]
+	/// Treat `key.attribute` as defined [default: true]
 	#[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
 	pub attributes: Option<bool>,
 
-	/// Match keys inside `//` comment lines too [default: false]
-	#[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
-	pub include_comments: Option<bool>,
-
-	/// Fail when the locales directory is missing or empty [default: true]
-	#[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
-	pub require_locales: Option<bool>,
-
 	// ---- walking ----
-	/// Path glob to skip, relative to PATH; repeatable [default: target/**]
+	/// Path glob to skip [default: target/**]
 	#[arg(long, value_name = "GLOB")]
 	pub exclude: Option<Vec<String>>,
 
@@ -143,18 +126,18 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn cli_and_toml_accept_the_same_names() {
+	fn cli_and_toml_agree() {
 		let cli = PartialConfig::parse_from([
 			"flynt",
 			"--locales-dir",
 			"i18n",
-			"--locale",
+			"--locales",
 			"en",
-			"--locale",
+			"--locales",
 			"de",
 			"--template-ext",
 			"j2",
-			"--filter",
+			"--filters",
 			"tr",
 			"--unused",
 			"error",
@@ -187,7 +170,7 @@ mod tests {
 	}
 
 	#[test]
-	fn bare_bool_flag_means_true_and_the_negative_form_is_available() {
+	fn bare_bool_flag_is_true() {
 		assert_eq!(
 			PartialConfig::parse_from(["flynt", "--attributes"]).attributes,
 			Some(true)
@@ -200,7 +183,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_empty_list_is_distinguishable_from_an_absent_one() {
+	fn empty_list_different() {
 		let absent: PartialConfig = toml::from_str("").expect("empty TOML is valid");
 		assert!(absent.locales.is_none());
 
@@ -209,43 +192,21 @@ mod tests {
 	}
 
 	#[test]
-	fn the_singular_flag_names_are_accepted_in_the_config_file_too() {
-		let plural: PartialConfig = toml::from_str(
-			r#"
-			locales = ["en"]
-			filters = ["tr"]
-			functions = ["translate"]
-			"#,
-		)
-		.expect("the plural keys are valid");
-		let singular: PartialConfig = toml::from_str(
-			r#"
-			locale = ["en"]
-			filter = ["tr"]
-			function = ["translate"]
-			"#,
-		)
-		.expect("the singular aliases are valid");
-
-		assert_eq!(plural, singular);
-	}
-
-	#[test]
-	fn a_typo_in_the_config_file_is_an_error() {
+	fn unknown_toml_key_errors() {
 		let err = toml::from_str::<PartialConfig>("locale-dir = \"i18n\"")
 			.expect_err("deny_unknown_fields must reject a misspelled key");
 		assert!(err.to_string().contains("locale-dir"), "{err}");
 	}
 
 	#[test]
-	fn root_is_not_settable_from_the_config_file() {
+	fn root_is_cli_only() {
 		let err =
 			toml::from_str::<PartialConfig>("root = \"..\"").expect_err("root must be CLI-only");
 		assert!(err.to_string().contains("root"), "{err}");
 	}
 
 	#[test]
-	fn the_cli_definition_is_internally_consistent() {
+	fn cli_definition_is_consistent() {
 		use clap::CommandFactory;
 		PartialConfig::command().debug_assert();
 	}

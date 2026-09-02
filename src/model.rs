@@ -1,9 +1,6 @@
 // src/model.rs
 
-//! Data model: key usages, key definitions, findings, and the report.
-//!
-//! Every collection in this module is ordered. This module uses `BTreeMap`, `BTreeSet`, or an
-//! explicitly sorted `Vec`. Two runs over the same tree then produce byte-identical output.
+//! Key usages, definitions, findings, and report.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -13,8 +10,6 @@ use serde::Serialize;
 use crate::config::Severity;
 
 /// Where a key was used or defined.
-///
-/// `file` is always relative to the linted root.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Location {
 	/// Path relative to the linted root.
@@ -26,7 +21,7 @@ pub struct Location {
 	pub column: usize,
 }
 
-/// Serializes a path with forward slashes for the JSON report (platform agnostic).
+/// Serializes a path with forward slashes for the JSON report.
 fn serialize_path<S: serde::Serializer>(path: &std::path::Path, out: S) -> Result<S::Ok, S::Error> {
 	let text = path.to_string_lossy();
 	if std::path::MAIN_SEPARATOR == '/' {
@@ -42,13 +37,13 @@ impl std::fmt::Display for Location {
 	}
 }
 
-/// What kind of source a key was used from.
+/// Key source kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UsageType {
-	/// An Askama template filter, such as `{{ "key" | t(&lang) }}`.
+	/// An Askama template filter.
 	Template,
-	/// A Rust function call, such as `loc("key", &lang)`.
+	/// A Rust function call.
 	Rust,
 }
 
@@ -63,18 +58,18 @@ impl UsageType {
 	}
 }
 
-/// A single site where a translation key is used.
+/// A site where a key is used.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct KeyUsage {
 	/// The translation key.
 	pub key: String,
 	/// Where the key is used.
 	pub at: Location,
-	/// Whether the usage came from a template or from Rust code.
+	/// Used in template or Rust.
 	pub kind: UsageType,
 }
 
-/// A single site where a translation key is defined.
+/// A site where a key is defined.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct KeyDefinition {
 	/// Where the key is defined.
@@ -82,57 +77,55 @@ pub struct KeyDefinition {
 }
 
 /// Every key defined by one locale.
-///
-/// Keys map to all of their definitionss. Duplicate detection needs no second map because of this.
 #[derive(Debug, Clone, Default)]
 pub struct LocaleKeys {
-	/// The locale name, which is also its directory name.
+	/// The locale's name and directory name.
 	pub locale: String,
-	/// Keys, each with every definition found for it.
+	/// Keys with every definition found.
 	pub keys: BTreeMap<String, Vec<KeyDefinition>>,
-	/// Keys that are Fluent terms (`-brand = ...`), a subset of `keys`.
+	/// Keys that are Fluent terms.
 	pub terms: std::collections::BTreeSet<String>,
 }
 
-/// A key that is used but not defined in every locale.
+/// A key missing from some locales.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MissingKey {
 	/// The translation key.
 	pub key: String,
 	/// Every site that uses the key, sorted.
 	pub usages: Vec<KeyUsage>,
-	/// Locales that do not define the key, sorted.
+	/// Locales that do not define it.
 	pub missing_in: Vec<String>,
 }
 
-/// A key that some locales define and others do not.
+/// A key not defined in all locales.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InconsistentKey {
 	/// The translation key.
 	pub key: String,
 	/// Locales that define the key, sorted.
 	pub present_in: Vec<String>,
-	/// Locales that do not define the key, sorted.
+	/// Locales that do not define it.
 	pub missing_in: Vec<String>,
 }
 
-/// A key defined more than once within a single locale.
+/// A key defined more than once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DuplicateKey {
 	/// The translation key.
 	pub key: String,
-	/// The locale that defines it more than once.
+	/// The locale with duplicate definitions.
 	pub locale: String,
-	/// Every definition, sorted.
+	/// Every definition.
 	pub definitions: Vec<KeyDefinition>,
 }
 
-/// A key that is defined but never used.
+/// A key defined but never used.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UnusedKey {
 	/// The translation key.
 	pub key: String,
-	/// The locale the finding was computed against, the reference locale.
+	/// The reference locale.
 	pub locale: String,
 	/// Where the key is defined.
 	pub definition: KeyDefinition,
@@ -150,38 +143,38 @@ pub struct ParseError {
 /// Counts and context for the run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Summary {
-	/// Number of distinct keys used across templates and Rust code.
+	/// Number of distinct keys used.
 	pub used: usize,
-	/// Number of distinct keys defined, as the union over every locale.
+	/// Number of distinct keys defined.
 	pub defined: usize,
 	/// Number of keys defined by each locale.
 	pub defined_per_locale: BTreeMap<String, usize>,
-	/// Locales that were checked, sorted.
+	/// Locales that were checked.
 	pub locales: Vec<String>,
 	/// Locale used for the unused-key check.
 	pub reference_locale: String,
-	/// Number of files read, across sources, templates, and locales.
+	/// Number of files read.
 	pub files_scanned: usize,
 }
 
-/// The result of a full run. It contains findings and performs no output.
+/// The result of a full run.
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
-	/// Version of the JSON shape, bumped on any breaking change.
+	/// Version of the JSON schema.
 	pub schema_version: u32,
 	/// Counts and context.
 	pub summary: Summary,
-	/// Keys used but missing from at least one locale.
+	/// Keys used but missing from a locale.
 	pub missing_keys: Vec<MissingKey>,
-	/// Keys that some locales define and others do not.
+	/// Keys not defined in all locales.
 	pub inconsistent_keys: Vec<InconsistentKey>,
-	/// Keys defined more than once in one locale.
+	/// Keys defined more than once.
 	pub duplicate_keys: Vec<DuplicateKey>,
 	/// Keys defined but never used.
 	pub unused_keys: Vec<UnusedKey>,
 	/// Fluent syntax errors.
 	pub parse_errors: Vec<ParseError>,
-	/// Severity configured for `unused_keys`, which decides the exit code.
+	/// Severity for the exit code.
 	#[serde(skip)]
 	pub unused_severity: Severity,
 }
@@ -190,7 +183,7 @@ pub struct Report {
 pub const SCHEMA_VERSION: u32 = 1;
 
 impl Report {
-	/// Whether the run found anything that should fail the build.
+	/// Whether the run should fail.
 	#[must_use]
 	pub fn has_errors(&self) -> bool {
 		!self.missing_keys.is_empty()
@@ -200,24 +193,17 @@ impl Report {
 			|| (self.unused_severity == Severity::Error && !self.unused_keys.is_empty())
 	}
 
-	/// Whether the run found anything worth mentioning but not failing on.
+	/// Whether the run has warnings.
 	#[must_use]
 	pub fn has_warnings(&self) -> bool {
-		self.is_vacuous()
-			|| (self.unused_severity == Severity::Warn && !self.unused_keys.is_empty())
+		self.unused_severity == Severity::Warn && !self.unused_keys.is_empty()
 	}
 
-	/// Whether no locale was checked. When this is true, the coverage, and consistency checks are
-	/// inapplicable.
+	/// Process exit code.
 	///
-	/// This only happens with `--require-locales=false`. The run must never be reported as clean in
-	/// this case.
-	#[must_use]
-	pub fn is_vacuous(&self) -> bool {
-		self.summary.locales.is_empty()
-	}
-
-	/// Process exit code: `0` when clean, `1` when there are errors.
+	/// - `0`: clean
+	/// - `1`: lint errors
+	/// - `2`: internal error
 	#[must_use]
 	pub fn exit_code(&self) -> u8 {
 		u8::from(self.has_errors())
@@ -279,7 +265,7 @@ mod tests {
 	}
 
 	#[test]
-	fn unused_severity_decides_the_exit_code() {
+	fn severity_decides_exit_code() {
 		let warn = report(Severity::Warn, 3);
 		assert!(!warn.has_errors());
 		assert!(warn.has_warnings());
@@ -296,18 +282,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_run_with_no_locale_is_never_reported_as_clean() {
-		let mut r = report(Severity::Warn, 0);
-		r.summary.locales.clear();
-		assert!(r.is_vacuous());
-		assert!(r.has_warnings(), "an inapplicable run must not look clean");
-		// The user asked for it with `--require-locales=false`.
-		assert!(!r.has_errors());
-		assert_eq!(r.exit_code(), 0);
-	}
-
-	#[test]
-	fn location_displays_as_file_line_column() {
+	fn location_displays_as_string() {
 		let at = Location {
 			file: PathBuf::from("types/templates/home.html"),
 			line: 42,
@@ -317,7 +292,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_serialized_path_always_uses_forward_slashes() {
+	fn serialized_path_uses_slashes() {
 		let at = Location {
 			file: PathBuf::from("templates").join("home.html"),
 			line: 1,

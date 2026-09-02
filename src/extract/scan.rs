@@ -9,12 +9,10 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 
-/// Maps byte offsets in a file to one-based line and column numbers.
-///
-/// Matching runs over the whole file to find calls or filters split across lines.
+/// Maps byte offsets to line and column.
 pub struct LineIndex<'a> {
 	content: &'a str,
-	/// Byte offset of the start of each line.
+	/// Byte offset of each line's start.
 	starts: Vec<usize>,
 }
 
@@ -33,7 +31,7 @@ impl<'a> LineIndex<'a> {
 
 	/// One-based line number containing `offset`.
 	fn line_of(&self, offset: usize) -> usize {
-		// `partition_point` gives the count of starts at or before the offset.
+		// Counts starts at or before offset.
 		self.starts.partition_point(|&start| start <= offset).max(1)
 	}
 
@@ -46,7 +44,7 @@ impl<'a> LineIndex<'a> {
 		(line, column)
 	}
 
-	/// Whether the line containing `offset` is a `//` comment.
+	/// Whether offset's line is a comment.
 	pub fn is_comment_line(&self, offset: usize) -> bool {
 		let line = self.line_of(offset);
 		let start = self.starts[line - 1];
@@ -55,7 +53,7 @@ impl<'a> LineIndex<'a> {
 	}
 }
 
-/// Walks directories, skipping hidden entries and excluded paths.
+/// Walks directories, skipping hidden and excluded paths.
 pub struct Walker {
 	root: PathBuf,
 	exclude: Vec<glob::Pattern>,
@@ -67,7 +65,7 @@ impl Walker {
 	///
 	/// # Errors
 	///
-	/// Returns an error when an exclude entry is not a valid glob.
+	/// - An exclude entry is invalid.
 	pub fn new(config: &Config) -> Result<Self> {
 		let exclude = config
 			.exclude
@@ -84,13 +82,11 @@ impl Walker {
 		})
 	}
 
-	/// Lists the files under `dir` that `accept` approves, sorted.
-	///
-	/// A directory that does not exist yields nothing.
+	/// Lists the files that `accept` approves.
 	///
 	/// # Errors
 	///
-	/// Returns an error when a directory that does exist cannot be read.
+	/// - Directory exists but cannot be read.
 	pub fn files(&self, dir: &Path, accept: impl Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
 		if !dir.is_dir() {
 			return Ok(Vec::new());
@@ -115,10 +111,9 @@ impl Walker {
 		Ok(found)
 	}
 
-	/// Whether an entry should not be descended into or read.
+	/// Whether to skip this entry.
 	fn is_skipped(&self, path: &Path, depth: usize) -> bool {
-		// Never skip the directory the walk started from. Even if its own name
-		// would match, the caller asked for it explicitly.
+		// Never skip the starting directory.
 		if depth == 0 {
 			return false;
 		}
@@ -133,11 +128,12 @@ impl Walker {
 	}
 }
 
-/// Reads a file as UTF-8, naming it on failure.
+/// Reads a file as UTF-8.
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be read or is not UTF-8.
+/// - File cannot be read.
+/// - File is not UTF-8.
 pub fn read(path: &Path) -> Result<String> {
 	std::fs::read_to_string(path)
 		.with_context(|| format!("cannot read the file: {}", path.display()))
@@ -148,18 +144,18 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn the_first_character_is_line_one_column_one() {
+	fn offset_zero_location() {
 		let index = LineIndex::new("abc\ndef");
 		assert_eq!(index.locate(0), (1, 1));
 	}
 
 	#[test]
-	fn offsets_map_to_the_right_line_and_column() {
+	fn offsets_map_correctly() {
 		let content = "one\ntwo\nthree\n";
 		let index = LineIndex::new(content);
 		assert_eq!(index.locate(0), (1, 1));
 		assert_eq!(index.locate(2), (1, 3));
-		// The newline itself still belongs to the line it terminates.
+		// The newline belongs to its own line.
 		assert_eq!(index.locate(3), (1, 4));
 		assert_eq!(index.locate(4), (2, 1));
 		assert_eq!(index.locate(8), (3, 1));
@@ -167,8 +163,8 @@ mod tests {
 	}
 
 	#[test]
-	fn columns_count_characters_not_bytes() {
-		// Each accented character is two bytes. A byte column would drift.
+	fn columns_count_chars() {
+		// Each accented character is two bytes.
 		let content = "éé\"key\"";
 		let index = LineIndex::new(content);
 		let offset = content.find('"').expect("the quote is there");
@@ -176,8 +172,8 @@ mod tests {
 	}
 
 	#[test]
-	fn a_four_byte_character_counts_as_one_column() {
-		// An emoji is four bytes and one `char`.
+	fn four_byte_char_column() {
+		// An emoji is four bytes, one `char`.
 		let content = "👋👋\"key\"";
 		let index = LineIndex::new(content);
 		let offset = content.find('"').expect("the quote is there");
@@ -186,19 +182,19 @@ mod tests {
 	}
 
 	#[test]
-	fn an_offset_past_the_end_does_not_panic() {
+	fn offset_past_end_ok() {
 		let index = LineIndex::new("abc");
 		assert_eq!(index.locate(99), (1, 4));
 	}
 
 	#[test]
-	fn a_line_with_no_trailing_newline_is_still_indexed() {
+	fn no_trailing_newline_ok() {
 		let index = LineIndex::new("a\nb");
 		assert_eq!(index.locate(2), (2, 1));
 	}
 
 	#[test]
-	fn comment_lines_are_recognized_in_every_form() {
+	fn recognizes_comment_forms() {
 		let content = "let a = 1;\n// plain\n\t/// doc\n  //! inner\ncode();\n";
 		let index = LineIndex::new(content);
 		let at = |needle: &str| content.find(needle).expect("the marker is there");
@@ -211,7 +207,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_trailing_comment_does_not_make_the_line_a_comment() {
+	fn trailing_comment_not_line() {
 		let content = "let key = 1; // see loc(\"x\")\n";
 		let index = LineIndex::new(content);
 		assert!(!index.is_comment_line(0));
