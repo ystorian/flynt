@@ -1,12 +1,6 @@
 // src/config/manifest.rs
 
-//! Discovery from `Cargo.toml` and the filesystem.
-//!
-//! The manifest is parsed directly rather than by shelling out to `cargo metadata`.
-//!
-//! Flynt only needs directory names.
-//!
-//! Note that `workspace.default-members` is deliberately ignored.
+//! Discovers crate layout from Cargo.toml.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -14,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-/// Directory name conventionally holding Askama templates.
+/// Askama template directory name.
 const TEMPLATE_DIR: &str = "templates";
 
 #[derive(Debug, Deserialize)]
@@ -37,23 +31,18 @@ struct Package {
 	name: Option<String>,
 }
 
-/// Lists the crate directories to consider, from the root manifest.
-///
-/// A workspace yields its `members`. Globs expand, and `exclude` applies. The root itself also
-/// counts, when the root manifest is also a package.
-///
-/// A manifest with no `[workspace]` table, or an empty one, yields just the root.
+/// Lists crate directories from the manifest.
 ///
 /// # Errors
 ///
-/// Returns an error when the manifest is missing, unreadable, or not valid TOML. It also returns an
-/// error when the manifest declares neither `[package]` nor `[workspace]`, or when a member pattern
-/// is not a valid glob.
+/// - Fails if the manifest is missing.
+/// - Fails if the manifest is invalid.
+/// - Fails if no package or workspace exists.
+///
 pub fn members(root: &Path, manifest_path: &Path) -> Result<Vec<PathBuf>> {
 	let text = std::fs::read_to_string(manifest_path).with_context(|| {
 		format!(
-			"cannot read the manifest: {}\nPass --manifest-path to point at it, or run flynt from \
-			 the directory that holds it.",
+			"cannot read the manifest: {}. Pass --manifest-path.",
 			manifest_path.display()
 		)
 	})?;
@@ -75,30 +64,29 @@ pub fn members(root: &Path, manifest_path: &Path) -> Result<Vec<PathBuf>> {
 		}
 	}
 
-	// A root manifest can be both the workspace root and a package of its own.
+	// The root may also be a package.
 	if manifest.package.is_some() {
 		found.insert(root.to_path_buf());
 	}
 
 	anyhow::ensure!(
 		!found.is_empty(),
-		"{} declares neither [package] nor [workspace] members, so there is nothing to scan.\n\
-		 Use --src to say which directories hold the Rust code.",
+		"{} declares neither [package] nor [workspace]. Use --src instead.",
 		manifest_path.display()
 	);
 
 	Ok(found.into_iter().collect())
 }
 
-/// The `src` directory of every member that has one.
+/// Each member's `src` directory.
 ///
-/// A member without a `src` directory is skipped.
+/// Skips members without a `src` directory.
 #[must_use]
 pub fn src_dirs(members: &[PathBuf]) -> Vec<PathBuf> {
 	subdirs(members, "src")
 }
 
-/// The `templates` directory of every member that has one.
+/// Each member's `templates` directory.
 #[must_use]
 pub fn template_dirs(members: &[PathBuf]) -> Vec<PathBuf> {
 	subdirs(members, TEMPLATE_DIR)
@@ -114,13 +102,11 @@ fn subdirs(members: &[PathBuf], name: &str) -> Vec<PathBuf> {
 		.collect()
 }
 
-/// Locale names, taken from the subdirectories of the locales directory.
-///
-/// A missing directory yields an empty list. This lets `--require-locales=false` work as intended.
+/// Locale names from the locales subdirectories.
 ///
 /// # Errors
 ///
-/// Returns an error when the directory exists but cannot be read.
+/// - Fails if the directory is unreadable.
 pub fn discover_locales(locales_dir: &Path) -> Result<Vec<String>> {
 	if !locales_dir.is_dir() {
 		return Ok(Vec::new());
@@ -137,7 +123,7 @@ pub fn discover_locales(locales_dir: &Path) -> Result<Vec<String>> {
 	for entry in entries {
 		let entry = entry.with_context(|| {
 			format!(
-				"cannot read an entry of the locales directory: {}",
+				"cannot read a locales directory entry: {}",
 				locales_dir.display()
 			)
 		})?;
@@ -145,7 +131,7 @@ pub fn discover_locales(locales_dir: &Path) -> Result<Vec<String>> {
 			continue;
 		}
 		let name = entry.file_name().to_string_lossy().into_owned();
-		// Skip dotted directories such as `.git` or `.DS_Store` leftovers.
+		// Skip dotted directories.
 		if name.starts_with('.') {
 			continue;
 		}
@@ -155,7 +141,7 @@ pub fn discover_locales(locales_dir: &Path) -> Result<Vec<String>> {
 	Ok(locales.into_iter().collect())
 }
 
-/// Expands one member pattern into the directories it names.
+/// Expands a member pattern into paths.
 fn expand(root: &Path, pattern: &str, manifest_path: &Path) -> Result<Vec<PathBuf>> {
 	let joined = root.join(pattern);
 
@@ -169,13 +155,13 @@ fn expand(root: &Path, pattern: &str, manifest_path: &Path) -> Result<Vec<PathBu
 
 	let as_str = joined.to_str().with_context(|| {
 		format!(
-			"the member pattern {pattern:?} in {} does not form a valid UTF-8 path",
+			"member pattern {pattern:?} in {} is not valid UTF-8",
 			manifest_path.display()
 		)
 	})?;
 	let paths = glob::glob(as_str).with_context(|| {
 		format!(
-			"the member pattern {pattern:?} in {} is not a valid glob",
+			"member pattern {pattern:?} in {} is not a valid glob",
 			manifest_path.display()
 		)
 	})?;
@@ -183,7 +169,7 @@ fn expand(root: &Path, pattern: &str, manifest_path: &Path) -> Result<Vec<PathBu
 	let mut found = Vec::new();
 	for path in paths {
 		let Ok(path) = path else { continue };
-		// A glob must only ever match a crate.
+		// A glob must only match a crate.
 		if path.is_dir() && path.join("Cargo.toml").is_file() {
 			found.push(path);
 		}
@@ -197,7 +183,7 @@ fn patterns(raw: &[String], manifest_path: &Path) -> Result<Vec<glob::Pattern>> 
 		.map(|p| {
 			glob::Pattern::new(p).with_context(|| {
 				format!(
-					"the exclude pattern {p:?} in {} is not a valid glob",
+					"exclude pattern {p:?} in {} is not a valid glob",
 					manifest_path.display()
 				)
 			})
@@ -205,10 +191,7 @@ fn patterns(raw: &[String], manifest_path: &Path) -> Result<Vec<glob::Pattern>> 
 		.collect()
 }
 
-/// Whether a member is excluded, by glob or as a plain directory prefix.
-///
-/// Cargo accepts a bare directory name in `exclude`. As a glob, that name would only match the
-/// exact path.
+/// Whether a member is excluded.
 fn is_excluded(root: &Path, member: &Path, compiled: &[glob::Pattern], raw: &[String]) -> bool {
 	let Ok(relative) = member.strip_prefix(root) else {
 		return false;
@@ -221,7 +204,7 @@ fn is_excluded(root: &Path, member: &Path, compiled: &[glob::Pattern], raw: &[St
 mod tests {
 	use super::*;
 
-	/// Builds a throwaway tree under the temp directory. Returns its root.
+	/// Builds a throwaway tree and returns its root.
 	fn scratch(name: &str, files: &[(&str, &str)]) -> PathBuf {
 		let root = std::env::temp_dir().join(format!("flynt-{}-{name}", std::process::id()));
 		let _ = std::fs::remove_dir_all(&root);
@@ -234,7 +217,7 @@ mod tests {
 		root
 	}
 
-	/// Renders the found paths relative to the root, using `.` for the root itself.
+	/// Renders paths relative to the root.
 	fn names(root: &Path, found: &[PathBuf]) -> Vec<String> {
 		found
 			.iter()
@@ -253,7 +236,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_workspace_yields_every_member() {
+	fn workspace_yields_members() {
 		let root = scratch(
 			"members",
 			&[
@@ -270,7 +253,7 @@ mod tests {
 	}
 
 	#[test]
-	fn member_globs_expand_and_exclude_applies() {
+	fn member_globs_respect_exclude() {
 		let root = scratch(
 			"globs",
 			&[
@@ -282,7 +265,7 @@ mod tests {
 				("crates/one/src/lib.rs", ""),
 				("crates/two/Cargo.toml", ""),
 				("crates/skipped/Cargo.toml", ""),
-				// Not a crate. A glob must not pick it up.
+				// Non-crate files must be skipped.
 				("crates/notacrate/README.md", ""),
 			],
 		);
@@ -291,7 +274,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_single_crate_yields_its_own_root() {
+	fn single_crate_yields_root() {
 		let root = scratch(
 			"single",
 			&[
@@ -305,7 +288,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_empty_workspace_table_means_a_single_crate() {
+	fn empty_workspace_yields_root() {
 		let root = scratch(
 			"empty-workspace",
 			&[
@@ -318,7 +301,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_root_that_is_both_package_and_workspace_yields_both() {
+	fn root_yields_both_entries() {
 		let root = scratch(
 			"both",
 			&[
@@ -355,7 +338,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_member_without_a_src_directory_is_skipped() {
+	fn member_without_src_skipped() {
 		let root = scratch(
 			"no-src",
 			&[
@@ -372,7 +355,7 @@ mod tests {
 	}
 
 	#[test]
-	fn template_directories_are_found_next_to_each_member() {
+	fn templates_found_per_member() {
 		let root = scratch(
 			"templates",
 			&[
@@ -387,7 +370,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_missing_manifest_is_an_error_naming_the_flag() {
+	fn missing_manifest_names_flag() {
 		let root = scratch("missing", &[("src/lib.rs", "")]);
 		let err =
 			members(&root, &root.join("Cargo.toml")).expect_err("a missing manifest must fail");
@@ -397,14 +380,14 @@ mod tests {
 	}
 
 	#[test]
-	fn a_malformed_manifest_is_an_error() {
+	fn malformed_manifest_errors() {
 		let root = scratch("malformed", &[("Cargo.toml", "[package\nname =")]);
 		let err = members(&root, &root.join("Cargo.toml")).expect_err("invalid TOML must fail");
 		assert!(format!("{err:#}").contains("cannot parse the manifest"));
 	}
 
 	#[test]
-	fn a_manifest_with_neither_table_is_an_error() {
+	fn manifest_without_tables_errors() {
 		let root = scratch(
 			"neither",
 			&[("Cargo.toml", "[dependencies]\nanyhow = \"1\"\n")],
@@ -417,14 +400,14 @@ mod tests {
 	}
 
 	#[test]
-	fn locales_come_from_the_subdirectories() {
+	fn locales_from_subdirectories() {
 		let root = scratch(
 			"locales",
 			&[
 				("locales/en/app.ftl", ""),
 				("locales/fr/app.ftl", ""),
 				("locales/.hidden/app.ftl", ""),
-				// A stray file must not be mistaken for a locale.
+				// A stray file, not a locale.
 				("locales/README.md", ""),
 			],
 		);
@@ -433,7 +416,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_missing_locales_directory_yields_no_locales_rather_than_an_error() {
+	fn missing_locales_dir_empty() {
 		let root = scratch("no-locales", &[("Cargo.toml", "[package]\nname = \"x\"\n")]);
 		let found = discover_locales(&root.join("locales"))
 			.expect("a missing directory is not an error here");

@@ -1,17 +1,15 @@
 // src/check/consistency.rs
 
-//! Consistency: every locale must define the same set of keys.
+//! Consistency: locales must share keys.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{InconsistentKey, LocaleKeys};
 
-/// Finds keys that some locales define and others do not.
-///
-/// Unlike the coverage check, this check ignores whether a key is used at all.
+/// Finds keys some locales miss.
 #[must_use]
 pub fn inconsistent(locales: &BTreeMap<String, LocaleKeys>) -> Vec<InconsistentKey> {
-	// One locale cannot disagree with itself.
+	// A single locale cannot disagree.
 	if locales.len() < 2 {
 		return Vec::new();
 	}
@@ -67,7 +65,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_finding_names_both_sides() {
+	fn finding_both_sides() {
 		let locales = BTreeMap::from([
 			("en".to_owned(), locale("en", &["a", "only-en"])),
 			("fr".to_owned(), locale("fr", &["a"])),
@@ -80,7 +78,7 @@ mod tests {
 	}
 
 	#[test]
-	fn drift_in_either_direction_is_found() {
+	fn finding_inconsistent() {
 		let locales = BTreeMap::from([
 			("en".to_owned(), locale("en", &["shared", "only-en"])),
 			("fr".to_owned(), locale("fr", &["shared", "only-fr"])),
@@ -91,7 +89,7 @@ mod tests {
 	}
 
 	#[test]
-	fn three_locales_split_correctly() {
+	fn multiple_inconsistent() {
 		let locales = BTreeMap::from([
 			("de".to_owned(), locale("de", &[])),
 			("en".to_owned(), locale("en", &["k"])),
@@ -103,7 +101,7 @@ mod tests {
 	}
 
 	#[test]
-	fn findings_are_sorted_by_key() {
+	fn findings_sorted_by_key() {
 		let locales = BTreeMap::from([
 			("en".to_owned(), locale("en", &["zebra", "apple", "mango"])),
 			("fr".to_owned(), locale("fr", &[])),
@@ -113,7 +111,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_single_locale_is_always_consistent() {
+	fn single_locale_consistent() {
 		let locales = BTreeMap::from([("en".to_owned(), locale("en", &["a", "b"]))]);
 		assert!(inconsistent(&locales).is_empty());
 	}

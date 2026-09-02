@@ -7,7 +7,7 @@ mod support;
 use support::{assert_clean, check, check_with, config, fixture};
 
 #[test]
-fn a_clean_workspace_reports_nothing() {
+fn clean_workspace_reports_nothing() {
 	let report = check("clean");
 	assert_clean(&report);
 	assert_eq!(report.summary.used, 4);
@@ -20,8 +20,8 @@ fn a_clean_workspace_reports_nothing() {
 }
 
 #[test]
-fn every_workspace_member_is_scanned() {
-	// Both `app` and `types` contribute. A filter split across two lines is still found.
+fn every_member_is_scanned() {
+	// Both `app` and `types` contribute.
 	let report = check("clean");
 	let mut keys: Vec<&str> = report
 		.summary
@@ -35,7 +35,7 @@ fn every_workspace_member_is_scanned() {
 }
 
 #[test]
-fn a_key_missing_from_one_locale_is_reported() {
+fn missing_key_reported() {
 	let report = check("missing_key");
 	assert_eq!(report.missing_keys.len(), 1);
 	let finding = &report.missing_keys[0];
@@ -48,8 +48,8 @@ fn a_key_missing_from_one_locale_is_reported() {
 }
 
 #[test]
-fn four_byte_characters_do_not_shift_the_reported_column() {
-	// Every file in this fixture holds an emoji, which is four bytes and one character.
+fn four_byte_char_column() {
+	// Every file holds a 4-byte emoji.
 	let report = check("unicode");
 	let keys: Vec<&str> = report.missing_keys.iter().map(|k| k.key.as_str()).collect();
 	assert_eq!(keys, vec!["rust-key", "tpl-key"]);
@@ -62,13 +62,13 @@ fn four_byte_characters_do_not_shift_the_reported_column() {
 	assert_eq!(template.at.line, 1);
 	assert_eq!(template.at.column, 11);
 
-	// The emoji in the translation values do not disturb the parser.
+	// The emoji does not disturb parsing.
 	assert_eq!(report.summary.defined, 3);
 	assert_eq!(report.summary.used, 3);
 }
 
 #[test]
-fn locales_that_drift_apart_are_reported() {
+fn drifting_locales_reported() {
 	let report = check("inconsistent");
 	assert_eq!(report.inconsistent_keys.len(), 1);
 	let finding = &report.inconsistent_keys[0];
@@ -79,7 +79,7 @@ fn locales_that_drift_apart_are_reported() {
 }
 
 #[test]
-fn a_key_defined_in_two_files_is_reported_once_per_locale() {
+fn duplicate_key_reported_once() {
 	let report = check("duplicate");
 	assert_eq!(report.duplicate_keys.len(), 1);
 	let finding = &report.duplicate_keys[0];
@@ -95,7 +95,7 @@ fn a_key_defined_in_two_files_is_reported_once_per_locale() {
 }
 
 #[test]
-fn a_key_defined_twice_in_one_file_reports_two_distinct_lines() {
+fn duplicate_lines_one_file() {
 	let report = check("duplicate_same_file");
 	assert_eq!(report.duplicate_keys.len(), 1);
 	let lines: Vec<usize> = report.duplicate_keys[0]
@@ -107,7 +107,7 @@ fn a_key_defined_twice_in_one_file_reports_two_distinct_lines() {
 }
 
 #[test]
-fn an_unused_key_is_a_warning_that_does_not_fail_the_run() {
+fn unused_key_warns_only() {
 	let report = check("unused");
 	let keys: Vec<&str> = report.unused_keys.iter().map(|k| k.key.as_str()).collect();
 	assert_eq!(keys, vec!["err-404", "never-used-key"]);
@@ -117,7 +117,7 @@ fn an_unused_key_is_a_warning_that_does_not_fail_the_run() {
 }
 
 #[test]
-fn unused_keys_can_be_made_an_error() {
+fn unused_keys_become_errors() {
 	let report = check_with("unused", |cli| {
 		cli.unused = Some(flynt::Severity::Error);
 	});
@@ -127,7 +127,7 @@ fn unused_keys_can_be_made_an_error() {
 }
 
 #[test]
-fn unused_keys_can_be_switched_off_entirely() {
+fn unused_keys_switch_off() {
 	let report = check_with("unused", |cli| {
 		cli.unused = Some(flynt::Severity::Allow);
 	});
@@ -136,7 +136,7 @@ fn unused_keys_can_be_switched_off_entirely() {
 }
 
 #[test]
-fn an_ignore_glob_silences_matching_unused_keys() {
+fn ignore_glob_silences_keys() {
 	let report = check_with("unused", |cli| {
 		cli.ignore_unused = Some(vec!["err-*".to_owned()]);
 	});
@@ -145,7 +145,7 @@ fn an_ignore_glob_silences_matching_unused_keys() {
 }
 
 #[test]
-fn a_crate_with_no_workspace_table_scans_its_own_src() {
+fn lone_crate_scans_src() {
 	let report = check("single_crate");
 	assert_clean(&report);
 	assert_eq!(report.summary.used, 2);
@@ -153,23 +153,22 @@ fn a_crate_with_no_workspace_table_scans_its_own_src() {
 }
 
 #[test]
-fn member_globs_are_expanded_and_excludes_respected() {
-	// `crates/skipped` is excluded. Its key never becomes a usage.
-	// `crates/notacrate` has no manifest. A glob must not pick it up.
+fn member_globs_respect_excludes() {
+	// `crates/skipped` is excluded.
 	let report = check("glob_members");
 	assert_clean(&report);
 	assert_eq!(report.summary.used, 2);
 }
 
 #[test]
-fn a_member_without_a_src_directory_is_skipped_quietly() {
+fn member_without_src_skipped() {
 	let report = check("member_without_src");
 	assert_clean(&report);
 	assert_eq!(report.summary.used, 1);
 }
 
 #[test]
-fn a_missing_locales_directory_is_refused() {
+fn missing_locales_dir_refused() {
 	let config = config("no_locales");
 	let error = flynt::check(&config).expect_err("a missing locales directory must fail");
 	let text = format!("{error:#}");
@@ -178,24 +177,14 @@ fn a_missing_locales_directory_is_refused() {
 }
 
 #[test]
-fn an_empty_locales_directory_is_refused() {
+fn empty_locales_dir_refused() {
 	let config = config("empty_locales");
 	let error = flynt::check(&config).expect_err("an empty locales directory must fail");
 	assert!(format!("{error:#}").contains("no locale found"));
 }
 
 #[test]
-fn a_run_with_no_locale_is_reported_as_inapplicable_not_clean() {
-	let report = check_with("no_locales", |cli| {
-		cli.require_locales = Some(false);
-	});
-	assert!(report.is_vacuous());
-	assert!(report.has_warnings());
-	assert_eq!(report.exit_code(), 0);
-}
-
-#[test]
-fn a_broken_locale_file_reports_the_error_and_keeps_its_good_keys() {
+fn broken_file_keeps_keys() {
 	let report = check("bad_ftl");
 	assert_eq!(report.parse_errors.len(), 1);
 	let error = &report.parse_errors[0];
@@ -208,14 +197,14 @@ fn a_broken_locale_file_reports_the_error_and_keeps_its_good_keys() {
 		!error.message.is_empty(),
 		"the parser message is carried through"
 	);
-	// Recovery means the surrounding entries are still collected.
+	// Recovery keeps the good entries.
 	assert_eq!(report.summary.defined, 2);
 	assert!(report.has_errors());
 	assert_eq!(report.exit_code(), 1);
 }
 
 #[test]
-fn custom_helper_names_and_extensions_are_honoured() {
+fn custom_names_are_honoured() {
 	let report = check_with("custom_names", |cli| {
 		cli.filters = Some(vec!["x".to_owned()]);
 		cli.functions = Some(vec!["translate".to_owned()]);
@@ -226,46 +215,34 @@ fn custom_helper_names_and_extensions_are_honoured() {
 }
 
 #[test]
-fn doc_comments_and_lookalike_functions_are_not_usages() {
+fn doc_comments_not_usages() {
 	let report = check("comments");
 	assert_clean(&report);
 	assert_eq!(report.summary.used, 1);
 }
 
 #[test]
-fn comments_can_be_scanned_on_request() {
-	let report = check_with("comments", |cli| {
-		cli.include_comments = Some(true);
-	});
-	let keys: Vec<&str> = report.missing_keys.iter().map(|k| k.key.as_str()).collect();
-	assert_eq!(keys, vec!["ghost", "inner-ghost", "line-ghost"]);
-	assert_eq!(report.exit_code(), 1);
-}
-
-#[test]
-fn a_config_file_is_read_from_the_root() {
+fn config_file_reads_root() {
 	let report = check("config_file");
 	assert_clean(&report);
 	assert_eq!(report.summary.used, 2);
 }
 
 #[test]
-fn the_cli_overrides_the_config_file() {
-	let mut cli = flynt::PartialConfig {
+fn cli_overrides_config_file() {
+	let cli = flynt::PartialConfig {
 		root: Some(fixture("config_file")),
 		locales_dir: Some("locales".into()),
 		..flynt::PartialConfig::default()
 	};
-	cli.require_locales = Some(true);
 	let config = flynt::config::load(&cli).expect("the configuration loads");
-	// The file says `i18n`. The flag says `locales`. That directory does not
-	// exist.
+	// The flag overrides the file's value.
 	let error = flynt::check(&config).expect_err("the CLI value must win");
 	assert!(format!("{error:#}").contains("locales directory does not exist"));
 }
 
 #[test]
-fn the_config_file_can_be_ignored() {
+fn config_file_is_ignorable() {
 	let cli = flynt::PartialConfig {
 		root: Some(fixture("config_file")),
 		no_config: Some(true),
@@ -277,7 +254,7 @@ fn the_config_file_can_be_ignored() {
 }
 
 #[test]
-fn paths_in_findings_are_relative_to_the_root() {
+fn findings_paths_are_relative() {
 	let report = check("missing_key");
 	let file = &report.missing_keys[0].usages[0].at.file;
 	assert!(file.is_relative(), "{file:?}");

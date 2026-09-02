@@ -1,11 +1,11 @@
 // tests/determinism.rs
 
-//! Two runs over the same tree must produce identical bytes.
+//! Two runs must produce identical bytes.
 
 mod support;
 
 use flynt::config::OutputFormat;
-use support::{config, config_with};
+use support::config;
 
 /// Renders a fixture's report as JSON.
 fn json(name: &str) -> String {
@@ -19,12 +19,12 @@ fn json(name: &str) -> String {
 }
 
 #[test]
-fn a_clean_tree_renders_identically_every_time() {
+fn clean_tree_renders_identically() {
 	assert_eq!(json("clean"), json("clean"));
 }
 
 #[test]
-fn findings_render_identically_every_time() {
+fn findings_render_identically() {
 	for fixture in [
 		"missing_key",
 		"inconsistent",
@@ -42,7 +42,7 @@ fn findings_render_identically_every_time() {
 }
 
 #[test]
-fn the_locales_a_key_is_missing_from_are_always_in_the_same_order() {
+fn missing_locales_order_stable() {
 	let report = {
 		let config = config("missing_key");
 		flynt::check(&config).expect("the fixture checks")
@@ -58,10 +58,8 @@ fn the_locales_a_key_is_missing_from_are_always_in_the_same_order() {
 }
 
 #[test]
-fn every_finding_list_is_sorted() {
-	let config = config_with("comments", |cli| {
-		cli.include_comments = Some(true);
-	});
+fn finding_lists_are_sorted() {
+	let config = config("unicode");
 	let report = flynt::check(&config).expect("the fixture checks");
 
 	let keys: Vec<&str> = report.missing_keys.iter().map(|k| k.key.as_str()).collect();
@@ -71,7 +69,7 @@ fn every_finding_list_is_sorted() {
 }
 
 #[test]
-fn the_defined_count_does_not_depend_on_iteration_order() {
+fn defined_count_order_independent() {
 	let config = config("inconsistent");
 	let report = flynt::check(&config).expect("the fixture checks");
 	assert_eq!(report.summary.defined, 2);

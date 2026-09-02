@@ -8,13 +8,11 @@ use anyhow::{Context, Result};
 
 use crate::model::{LocaleKeys, UnusedKey};
 
-/// Finds unused keys defined by the reference locale.
-///
-/// Only the reference locale is examined.
+/// Finds unused keys in the reference locale.
 ///
 /// # Errors
 ///
-/// Returns an error when an `ignore_unused` entry is not a valid glob.
+/// Returns an error for an invalid glob.
 pub fn unused(
 	reference: &LocaleKeys,
 	used: &BTreeSet<String>,
@@ -65,14 +63,14 @@ mod tests {
 	}
 
 	#[test]
-	fn a_used_key_is_not_reported() {
+	fn used_key_unreported() {
 		let reference = locale("en", &["a", "b"]);
 		let found = unused(&reference, &used(&["a", "b"]), &[]).expect("no globs to compile");
 		assert!(found.is_empty());
 	}
 
 	#[test]
-	fn an_unused_key_is_reported_with_its_definition() {
+	fn unused_key_reported() {
 		let reference = locale("en", &["a", "stale"]);
 		let found = unused(&reference, &used(&["a"]), &[]).expect("no globs to compile");
 		assert_eq!(keys_of(&found), vec!["stale"]);
@@ -82,14 +80,14 @@ mod tests {
 
 	#[test]
 	fn terms_are_never_reported() {
-		// Nothing outside the `.ftl` files can reference a term.
+		// Only `.ftl` files reference a term.
 		let reference = locale_with_terms("en", &["a", "-brand"], &["-brand"]);
 		let found = unused(&reference, &used(&["a"]), &[]).expect("no globs to compile");
 		assert!(found.is_empty());
 	}
 
 	#[test]
-	fn an_ignore_glob_silences_a_key() {
+	fn ignore_glob_silences_key() {
 		let reference = locale("en", &["err-404", "err-500", "stale"]);
 		let found =
 			unused(&reference, &used(&[]), &["err-*".to_owned()]).expect("the glob compiles");
@@ -97,7 +95,7 @@ mod tests {
 	}
 
 	#[test]
-	fn several_ignore_globs_all_apply() {
+	fn multiple_ignore_globs() {
 		let reference = locale("en", &["err-404", "mail-hi", "stale"]);
 		let found = unused(
 			&reference,
@@ -109,7 +107,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_invalid_ignore_glob_is_an_error() {
+	fn invalid_glob_errors() {
 		let reference = locale("en", &["a"]);
 		let err = unused(&reference, &used(&[]), &["[".to_owned()])
 			.expect_err("an unclosed class is not a valid glob");
@@ -117,7 +115,7 @@ mod tests {
 	}
 
 	#[test]
-	fn findings_are_sorted_by_key() {
+	fn findings_sorted_by_key() {
 		let reference = locale("en", &["zebra", "apple", "mango"]);
 		let found = unused(&reference, &used(&[]), &[]).expect("no globs to compile");
 		assert_eq!(keys_of(&found), vec!["apple", "mango", "zebra"]);

@@ -1,12 +1,12 @@
 // src/check/coverage.rs
 
-//! Coverage: every used key must be defined in every locale.
+//! Coverage: used keys must be defined.
 
 use std::collections::BTreeMap;
 
 use crate::model::{KeyUsage, LocaleKeys, MissingKey};
 
-/// Finds keys that are used but absent from at least one locale.
+/// Finds used keys missing from a locale.
 #[must_use]
 pub fn missing(used: &[KeyUsage], locales: &BTreeMap<String, LocaleKeys>) -> Vec<MissingKey> {
 	let mut grouped: BTreeMap<&str, Vec<KeyUsage>> = BTreeMap::new();
@@ -46,7 +46,7 @@ mod tests {
 	use crate::check::tests::{locale, usage};
 
 	#[test]
-	fn a_key_defined_everywhere_is_not_reported() {
+	fn key_everywhere_unreported() {
 		let locales = BTreeMap::from([
 			("en".to_owned(), locale("en", &["a", "b"])),
 			("fr".to_owned(), locale("fr", &["a", "b"])),
@@ -55,7 +55,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_key_missing_from_one_locale_names_that_locale() {
+	fn missing_key_names_locale() {
 		let locales = BTreeMap::from([
 			("en".to_owned(), locale("en", &["a"])),
 			("fr".to_owned(), locale("fr", &[])),
@@ -67,7 +67,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_key_missing_everywhere_names_every_locale_in_order() {
+	fn missing_key_locales_order() {
 		let locales = BTreeMap::from([
 			("fr".to_owned(), locale("fr", &[])),
 			("en".to_owned(), locale("en", &[])),
@@ -81,7 +81,7 @@ mod tests {
 	}
 
 	#[test]
-	fn repeated_usages_are_grouped_under_one_finding() {
+	fn repeated_usages_grouped() {
 		let locales = BTreeMap::from([("en".to_owned(), locale("en", &[]))]);
 		let found = missing(&[usage("a"), usage("a"), usage("a")], &locales);
 		assert_eq!(found.len(), 1);
@@ -89,7 +89,7 @@ mod tests {
 	}
 
 	#[test]
-	fn findings_are_sorted_by_key() {
+	fn findings_sorted_by_key() {
 		let locales = BTreeMap::from([("en".to_owned(), locale("en", &[]))]);
 		let found = missing(&[usage("zebra"), usage("apple"), usage("mango")], &locales);
 		let keys: Vec<&str> = found.iter().map(|f| f.key.as_str()).collect();
@@ -97,7 +97,7 @@ mod tests {
 	}
 
 	#[test]
-	fn no_locales_means_nothing_can_be_declared_missing() {
+	fn no_locales_no_missing() {
 		assert!(missing(&[usage("a")], &BTreeMap::new()).is_empty());
 	}
 }

@@ -18,11 +18,9 @@ use crate::parse::fluent::{self, Parsed};
 
 /// Runs every check and returns the report.
 ///
-/// Performs no output.
-///
 /// # Errors
 ///
-/// Returns an error for tool-level problems only.
+/// Returns an error for internal problems only.
 pub fn run(config: &Config) -> Result<Report> {
 	let walker = Walker::new(config)?;
 
@@ -42,11 +40,10 @@ pub fn run(config: &Config) -> Result<Report> {
 		.flat_map(|locale| locale.keys.keys())
 		.collect();
 
-	// A linter that found nothing to look at has been pointed at the wrong place.
+	// Nothing to check means the wrong path.
 	ensure!(
 		!(used.is_empty() && defined.is_empty()),
-		"nothing to check: no keys used under {} and none defined under {}.\n\
-		 Check the path, or set --src, --templates and --locales-dir.",
+		"nothing to check: no keys under {} or {}",
 		describe(&config.src, &config.templates),
 		config.locales_dir.display()
 	);
@@ -84,35 +81,24 @@ pub fn run(config: &Config) -> Result<Report> {
 	})
 }
 
-/// Refuses to run when there is no locale set to check against.
+/// Refuses to run without a locale set.
 fn require_locale_directory(config: &Config) -> Result<()> {
-	if !config.require_locales {
-		return Ok(());
-	}
-
 	ensure!(
 		config.locales_dir.is_dir(),
-		"the locales directory does not exist: {}\n\
-		 Pass --locales-dir to point at it, or --require-locales=false to allow its absence.",
+		"the locales directory does not exist: {}. Set --locales-dir.",
 		config.locales_dir.display()
 	);
 	ensure!(
 		!config.locales.is_empty(),
-		"no locale found in {}: it has no subdirectories.\n\
-		 A locale is a subdirectory holding .ftl files, such as {}/en.",
-		config.locales_dir.display(),
+		"no locale found in {}",
 		config.locales_dir.display()
 	);
 
 	Ok(())
 }
 
-/// Refuses to run when a requested locale is empty or absent.
+/// Refuses to run for an empty locale.
 fn require_locale_contents(config: &Config, parsed: &Parsed) -> Result<()> {
-	if !config.require_locales {
-		return Ok(());
-	}
-
 	for locale in &config.locales {
 		let dir = config.locales_dir.join(locale);
 		ensure!(
@@ -130,7 +116,7 @@ fn require_locale_contents(config: &Config, parsed: &Parsed) -> Result<()> {
 	Ok(())
 }
 
-/// Describes the scanned directories for an error message.
+/// Describes the directories for an error message.
 fn describe(src: &[std::path::PathBuf], templates: &[std::path::PathBuf]) -> String {
 	let mut all: Vec<String> = src
 		.iter()

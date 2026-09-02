@@ -1,9 +1,6 @@
 // src/extract/templates.rs
 
 //! Extracting translation keys from Askama templates.
-//!
-//! Matches a string literal piped into one of the configured filters, such as
-//! `{{ "key" | t(&lang) }}` or `{{ "key" | tn(&lang, "param", value) }}`.
 
 use std::path::Path;
 
@@ -19,8 +16,9 @@ use crate::model::{KeyUsage, Location, UsageType};
 ///
 /// # Errors
 ///
-/// Returns an error when a directory cannot be walked, a file cannot be read as
-/// UTF-8, or the configured filter names do not form a valid pattern.
+/// - Directory cannot be walked.
+/// - File is not valid UTF-8.
+/// - Filter names form an invalid pattern.
 pub fn keys(config: &Config, walker: &Walker) -> Result<Found> {
 	let Some(pattern) = pattern(&config.filters)? else {
 		return Ok(Found::default());
@@ -40,17 +38,14 @@ pub fn keys(config: &Config, walker: &Walker) -> Result<Found> {
 	Ok(found)
 }
 
-/// Whether a path carries one of the configured template extensions.
+/// Whether a path has a template extension.
 fn is_template(path: &Path, config: &Config) -> bool {
 	path.extension()
 		.and_then(|e| e.to_str())
 		.is_some_and(|e| config.is_template_ext(e))
 }
 
-/// Builds the filter pattern from the configured filter names.
-///
-/// The opening `{{` is deliberately not required. Anchoring on it would miss a key used inside a
-/// `{% ... %}` block.
+/// Builds the filter pattern from filter names.
 fn pattern(filters: &[String]) -> Result<Option<Regex>> {
 	let Some(alts) = alternation(filters) else {
 		return Ok(None);
@@ -107,7 +102,7 @@ mod tests {
 	}
 
 	#[test]
-	fn both_default_filters_are_found() {
+	fn both_defaults_found() {
 		let content = r#"
 			<h1>{{ "tpl-title" | t(&lang) }}</h1>
 			<p>{{ "mail-count" | tn(&lang, "count", count) }}</p>
@@ -116,15 +111,15 @@ mod tests {
 	}
 
 	#[test]
-	fn the_longer_filter_name_is_preferred() {
-		// `tn` must not be truncated to `t` by the alternation order.
+	fn longer_filter_preferred() {
+		// `tn` must not truncate to `t`.
 		let usages = extract(r#"{{ "k" | tn(&lang, "n", v) }}"#, &["t", "tn"]);
 		assert_eq!(usages.len(), 1);
 		assert_eq!(usages[0].key, "k");
 	}
 
 	#[test]
-	fn a_filter_split_across_lines_is_found() {
+	fn filter_split_across_lines() {
 		let content = "{{ \"wrapped\"\n\t| t(&lang) }}";
 		let usages = extract(content, &["t"]);
 		assert_eq!(usages.len(), 1);
@@ -133,25 +128,25 @@ mod tests {
 	}
 
 	#[test]
-	fn a_key_inside_a_block_tag_is_found() {
+	fn key_inside_block_tag() {
 		// Not anchoring on `{{`.
 		let content = r#"{% block title %}{{ "tpl-title" | t(&lang) }}{% endblock %}"#;
 		assert_eq!(keys_of(content), vec!["tpl-title"]);
 	}
 
 	#[test]
-	fn a_chained_filter_still_yields_the_key() {
+	fn chained_filter_yields_key() {
 		assert_eq!(keys_of(r#"{{ "k" | t(&lang) | upper }}"#), vec!["k"]);
 	}
 
 	#[test]
-	fn a_plain_string_without_the_filter_is_not_a_key() {
+	fn plain_string_not_key() {
 		let content = r#"<a href="/home" class="button">{{ title }}</a>"#;
 		assert!(keys_of(content).is_empty());
 	}
 
 	#[test]
-	fn custom_filter_names_replace_the_defaults() {
+	fn custom_names_replace_defaults() {
 		let content = r#"{{ "mine" | x(&lang) }} {{ "theirs" | t(&lang) }}"#;
 		let keys: Vec<String> = extract(content, &["x"])
 			.into_iter()
@@ -161,23 +156,23 @@ mod tests {
 	}
 
 	#[test]
-	fn the_location_points_at_the_key_itself() {
+	fn location_points_at_key() {
 		let content = "<html>\n<h1>{{ \"the-key\" | t(&lang) }}</h1>\n";
 		let usages = extract(content, &["t"]);
 		assert_eq!(usages[0].at.line, 2);
-		// The position points at the key text without the quotes around it.
+		// Points at the key without quotes.
 		assert_eq!(usages[0].at.column, 9);
 		assert_eq!(usages[0].kind, UsageType::Template);
 	}
 
 	#[test]
-	fn whitespace_around_the_pipe_is_tolerated() {
+	fn whitespace_around_pipe_ok() {
 		assert_eq!(keys_of(r#"{{"k"|t(&lang)}}"#), vec!["k"]);
 		assert_eq!(keys_of("{{ \"k\"  |  t (&lang) }}"), vec!["k"]);
 	}
 
 	#[test]
-	fn no_configured_filters_means_no_pattern() {
+	fn no_filters_no_pattern() {
 		assert!(
 			pattern(&[])
 				.expect("an empty list is not an error")

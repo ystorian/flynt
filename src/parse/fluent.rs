@@ -1,14 +1,11 @@
 // src/parse/fluent.rs
 
-//! Reading the keys defined by Fluent (`.ftl`) files.
+//! Read keys defined by Fluent files.
 //!
-//! Parsing happens in two passes over each file.
+//! Parsing is done in two passes over each file.
 //!
-//! The first pass records the line of every identifier that opens an entry. `fluent_syntax`'s AST
-//! carries no spans, and this line scan is the only way to point a report at a definition.
-//!
-//! The second pass parses the file properly. It keeps only the identifiers the real parser
-//! confirms. This lets the line scan use a simple pattern.
+//! - The first pass records the line of every identifier.
+//! - The second pass parses the file properly.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
@@ -23,13 +20,13 @@ use crate::config::Config;
 use crate::extract::scan::{LineIndex, Walker, read};
 use crate::model::{KeyDefinition, LocaleKeys, Location, ParseError};
 
-/// A message or term opening a line: `key = ...` or `-term = ...`.
+/// Matches a message or term line.
 static ENTRY_LINE: LazyLock<Regex> = LazyLock::new(|| {
 	Regex::new(r"^(-?[A-Za-z][A-Za-z0-9_-]*)[ \t]*=")
 		.expect("the entry-line pattern is a valid regex")
 });
 
-/// An attribute line, which is indented: `    .attr = ...`.
+/// Matches an indented attribute line.
 static ATTRIBUTE_LINE: LazyLock<Regex> = LazyLock::new(|| {
 	Regex::new(r"^[ \t]+\.([A-Za-z][A-Za-z0-9_-]*)[ \t]*=")
 		.expect("the attribute-line pattern is a valid regex")
@@ -38,7 +35,7 @@ static ATTRIBUTE_LINE: LazyLock<Regex> = LazyLock::new(|| {
 /// What parsing every locale produced.
 #[derive(Debug, Default)]
 pub struct Parsed {
-	/// One entry per locale, keyed by locale name.
+	/// One entry per locale.
 	pub locales: BTreeMap<String, LocaleKeys>,
 	/// Every Fluent syntax error found, sorted.
 	pub errors: Vec<ParseError>,
@@ -52,8 +49,9 @@ pub struct Parsed {
 ///
 /// # Errors
 ///
-/// Returns an error when a locale directory cannot be walked or a file cannot be read as `UTF-8`.
-/// Fluent syntax errors are collected into `Parsed::errors`.
+/// - Locale directory cannot be walked.
+/// - File is not `UTF-8`.
+/// - Fluent errors go to `errors`.
 pub fn parse_locales(config: &Config, walker: &Walker) -> Result<Parsed> {
 	let mut parsed = Parsed::default();
 
@@ -93,7 +91,7 @@ fn is_fluent(path: &Path) -> bool {
 
 /// One file's contribution.
 struct File {
-	/// Every definition, in file order, to preserve duplicates.
+	/// Every definition, in file order.
 	definitions: Vec<(String, KeyDefinition)>,
 	/// Fluent terms.
 	terms: BTreeSet<String>,
@@ -101,14 +99,14 @@ struct File {
 	errors: Vec<ParseError>,
 }
 
-/// Collects the keys defined by one file's contents.
+/// Collects the keys in one file.
 fn parse_file(content: &str, path: &Path, attributes: bool) -> File {
 	let index = LineIndex::new(content);
 	let mut lines = line_numbers(content);
 	let mut definitions = Vec::new();
 	let mut terms = BTreeSet::new();
 
-	// A recovered resource is usable as a clean one.
+	// A recovered resource is still usable.
 	let (resource, errors) = match parse(content) {
 		Ok(resource) => (resource, Vec::new()),
 		Err((resource, errors)) => (resource, errors),
@@ -125,7 +123,7 @@ fn parse_file(content: &str, path: &Path, attributes: bool) -> File {
 				false,
 			),
 			Entry::Term(t) => (
-				// A term is referenced with its leading dash. That dash is part of its key.
+				// A term keeps its leading dash.
 				format!("-{}", t.id.name),
 				t.attributes
 					.iter()
@@ -191,7 +189,7 @@ fn take_line(lines: &mut HashMap<String, VecDeque<usize>>, key: &str) -> usize {
 		.unwrap_or(1)
 }
 
-/// Records the line of every identifier that opens an entry or an attribute.
+/// Records the line of every entry.
 fn line_numbers(content: &str) -> HashMap<String, VecDeque<usize>> {
 	let mut lines: HashMap<String, VecDeque<usize>> = HashMap::new();
 	let mut current: Option<String> = None;
@@ -204,7 +202,7 @@ fn line_numbers(content: &str) -> HashMap<String, VecDeque<usize>> {
 			lines.entry(id.clone()).or_default().push_back(number);
 			current = Some(id);
 		} else if let Some(captures) = ATTRIBUTE_LINE.captures(line) {
-			// An attribute belongs to whichever entry opened last.
+			// An attribute belongs to the last entry.
 			if let Some(parent) = &current {
 				let key = format!("{parent}.{}", &captures[1]);
 				lines.entry(key).or_default().push_back(number);
@@ -228,7 +226,7 @@ mod tests {
 	}
 
 	#[test]
-	fn messages_are_collected_with_their_lines() {
+	fn messages_collected_with_lines() {
 		let content = "# a comment\nfirst = One\nsecond = Two\n";
 		assert_eq!(
 			keys_of(content, true),
@@ -237,7 +235,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_continuation_line_containing_an_equals_sign_is_not_a_definition() {
+	fn continuation_line_not_definition() {
 		let content = "key = Some text\n  more text with a = sign\nother = Two\n";
 		assert_eq!(
 			keys_of(content, true),
@@ -246,7 +244,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_key_defined_twice_reports_two_different_lines() {
+	fn duplicate_key_reports_lines() {
 		let content = "dup = One\nother = Two\ndup = Three\n";
 		assert_eq!(
 			keys_of(content, true),
@@ -259,15 +257,15 @@ mod tests {
 	}
 
 	#[test]
-	fn a_term_keeps_its_leading_dash() {
+	fn term_keeps_leading_dash() {
 		let file = parse_file("-brand = Ystorian\n", Path::new("a.ftl"), true);
 		assert_eq!(file.definitions[0].0, "-brand");
 		assert!(file.terms.contains("-brand"));
 	}
 
 	#[test]
-	fn attributes_are_collected_when_enabled() {
-		// Fluent indents with spaces only. A tab here would not parse.
+	fn attributes_collected_when_enabled() {
+		// Fluent indents with spaces only.
 		let content = "input = Label\n    .placeholder = Type here\n    .title = A title\n";
 		assert_eq!(
 			keys_of(content, true),
@@ -280,7 +278,7 @@ mod tests {
 	}
 
 	#[test]
-	fn attributes_are_skipped_when_disabled() {
+	fn attributes_skipped_when_disabled() {
 		let content = "input = Label\n    .placeholder = Type here\n";
 		assert_eq!(keys_of(content, false), vec![("input".to_owned(), 1)]);
 	}
@@ -292,7 +290,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_broken_file_still_yields_its_good_entries_and_reports_the_error() {
+	fn broken_file_reports_error() {
 		let content = "good = Fine\ng@Rb@ge = #2y ds\nalso-good = Fine\n";
 		let file = parse_file(content, Path::new("locales/en/broken.ftl"), true);
 
@@ -303,7 +301,7 @@ mod tests {
 		let error = &file.errors[0];
 		assert_eq!(error.at.file, Path::new("locales/en/broken.ftl"));
 		assert_eq!(error.at.line, 2);
-		// The real parser message, not just a count of errors.
+		// The real parser message, not a count.
 		assert!(!error.message.is_empty());
 		assert!(
 			error.message.contains("Expected") || error.message.contains("expected"),
@@ -313,13 +311,13 @@ mod tests {
 	}
 
 	#[test]
-	fn a_clean_file_reports_no_errors() {
+	fn clean_file_no_errors() {
 		let file = parse_file("a = One\nb = Two\n", Path::new("a.ftl"), true);
 		assert!(file.errors.is_empty());
 	}
 
 	#[test]
-	fn only_ftl_files_are_accepted() {
+	fn only_ftl_accepted() {
 		assert!(is_fluent(Path::new("locales/en/a.ftl")));
 		assert!(!is_fluent(Path::new("locales/en/a.txt")));
 		assert!(!is_fluent(Path::new("locales/en/README.md")));

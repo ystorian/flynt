@@ -34,7 +34,7 @@ pub const DEFAULT_FILTERS: &[&str] = &["t", "tn"];
 pub const DEFAULT_FUNCTIONS: &[&str] = &["loc", "loc_with_args"];
 /// Built-in default for [`Config::exclude`].
 pub const DEFAULT_EXCLUDE: &[&str] = &["target/**"];
-/// Locale preferred as the reference when it exists.
+/// Preferred reference locale, if present.
 pub const PREFERRED_REFERENCE_LOCALE: &str = "en";
 
 /// How a check reports its findings.
@@ -46,7 +46,7 @@ pub enum Severity {
 	/// Report but do not fail the run.
 	#[default]
 	Warn,
-	/// Do not report at all, and skip the check.
+	/// Skip the check entirely.
 	Allow,
 }
 
@@ -65,7 +65,7 @@ pub enum OutputFormat {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ColorChoice {
-	/// Color when the stream is a terminal and `NO_COLOR` is unset.
+	/// Color when supported and `NO_COLOR` is unset.
 	#[default]
 	Auto,
 	/// Always color.
@@ -77,19 +77,19 @@ pub enum ColorChoice {
 /// Manifest and filesystem inspection.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Discovered {
-	/// Rust source directories, one per workspace member that has a `src`.
+	/// Rust source directories per member.
 	pub src: Vec<PathBuf>,
 	/// Template directories found next to each member.
 	pub templates: Vec<PathBuf>,
-	/// Locale names, from the subdirectories of the locales directory.
+	/// Locale names from the locales directory.
 	pub locales: Vec<String>,
 }
 
-/// A fully resolved configuration. Every path is absolute.
+/// A fully resolved configuration.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-	/// The directory being linted. Paths in the report are relative to it.
+	/// The directory being linted.
 	pub root: PathBuf,
 	/// The root `Cargo.toml`.
 	pub manifest_path: PathBuf,
@@ -103,7 +103,7 @@ pub struct Config {
 	pub src: Vec<PathBuf>,
 	/// Template directories to scan.
 	pub templates: Vec<PathBuf>,
-	/// Template file extensions, lowercase and without a leading dot.
+	/// Template file extensions, lowercase, no dot.
 	pub template_ext: Vec<String>,
 	/// Askama filter names that take a key.
 	pub filters: Vec<String>,
@@ -115,30 +115,28 @@ pub struct Config {
 	pub ignore_unused: Vec<String>,
 	/// Whether `key.attribute` counts as a defined key.
 	pub attributes: bool,
-	/// Whether to match keys inside `//` comment lines.
-	pub include_comments: bool,
-	/// Whether a missing or empty locales directory is an error.
-	pub require_locales: bool,
-	/// Path globs to skip, relative to the root.
+	/// Path globs to skip, from the root.
 	pub exclude: Vec<String>,
 	/// Whether to follow symbolic links while walking.
 	pub follow_links: bool,
-	/// Shape of the rendered report.
+	/// Format of the rendered report.
 	pub format: OutputFormat,
 	/// When to emit color.
 	pub color: ColorChoice,
-	/// Whether to stay silent when there is nothing to report.
+	/// Whether to stay silent with no findings.
 	pub quiet: bool,
 }
 
 /// Loads the configuration for a CLI invocation.
 ///
-/// Canonicalizes the root first. Every later path is then absolute.
+/// Canonicalizes the root first.
 ///
 /// # Errors
 ///
-/// Returns an error when the root does not exist, when the configuration file is unreadable or
-/// malformed, or when the manifest cannot be understood.
+/// - Fails if the root is missing.
+/// - Fails if the configuration file is invalid.
+/// - Fails if the manifest cannot be read.
+///
 pub fn load(cli: &PartialConfig) -> Result<Config> {
 	let requested = cli.root.clone().unwrap_or_else(|| PathBuf::from("."));
 	let root = std::fs::canonicalize(&requested)
@@ -151,7 +149,7 @@ pub fn load(cli: &PartialConfig) -> Result<Config> {
 
 	let file = read_config_file(cli, &root)?;
 
-	// The manifest anchor has to be settled before discovery.
+	// Get the manifest first.
 	let manifest_path = first_path(&[cli.manifest_path.as_deref(), file.manifest_path.as_deref()])
 		.map_or_else(|| root.join("Cargo.toml"), |p| absolutize(&root, p));
 
@@ -172,8 +170,9 @@ pub fn load(cli: &PartialConfig) -> Result<Config> {
 ///
 /// # Errors
 ///
-/// Returns an error when `--config` names a file that cannot be read, or when the file is not a
-/// valid TOML.
+/// - Fails if `--config` names an unreadable file.
+/// - Fails if the file is invalid TOML.
+///
 fn read_config_file(cli: &PartialConfig, root: &Path) -> Result<PartialConfig> {
 	if cli.no_config == Some(true) {
 		return Ok(PartialConfig::default());
@@ -194,7 +193,7 @@ fn read_config_file(cli: &PartialConfig, root: &Path) -> Result<PartialConfig> {
 	toml::from_str(&text).with_context(|| format!("cannot parse {}", path.display()))
 }
 
-/// Merges the configuration layers into a final configuration.
+/// Merges the configuration layers.
 #[must_use]
 pub fn resolve(
 	cli: &PartialConfig,
@@ -202,7 +201,6 @@ pub fn resolve(
 	discovered: &Discovered,
 	root: &Path,
 ) -> Config {
-	// Replace-lists: the first layer that supplies a value wins.
 	let src = pick_paths(
 		&[cli.src.as_deref(), file.src.as_deref()],
 		&discovered.src,
@@ -261,11 +259,6 @@ pub fn resolve(
 			&[],
 		),
 		attributes: cli.attributes.or(file.attributes).unwrap_or(true),
-		include_comments: cli
-			.include_comments
-			.or(file.include_comments)
-			.unwrap_or(false),
-		require_locales: cli.require_locales.or(file.require_locales).unwrap_or(true),
 		exclude: pick_strings(
 			&[cli.exclude.as_deref(), file.exclude.as_deref()],
 			&defaults(DEFAULT_EXCLUDE),
@@ -284,14 +277,14 @@ impl Config {
 		path.strip_prefix(&self.root).unwrap_or(path).to_path_buf()
 	}
 
-	/// Whether `ext` is one of the configured template extensions.
+	/// Whether `ext` is a configured extension.
 	#[must_use]
 	pub fn is_template_ext(&self, ext: &str) -> bool {
 		self.template_ext.contains(&ext.to_lowercase())
 	}
 }
 
-/// Picks the reference locale. `en` wins when present. Otherwise, the first sorted locale wins.
+/// Picks the reference locale.
 fn default_reference_locale(locales: &[String]) -> String {
 	locales
 		.iter()
@@ -301,7 +294,7 @@ fn default_reference_locale(locales: &[String]) -> String {
 		.unwrap_or_else(|| PREFERRED_REFERENCE_LOCALE.to_owned())
 }
 
-/// Joins `path` onto `root` unless it is already absolute.
+/// Joins `path` onto `root` if relative.
 fn absolutize(root: &Path, path: &Path) -> PathBuf {
 	if path.is_absolute() {
 		path.to_path_buf()
@@ -322,7 +315,7 @@ fn defaults(values: &[&str]) -> Vec<String> {
 	values.iter().map(|v| (*v).to_owned()).collect()
 }
 
-/// The first layer that supplies a list wins. Otherwise, the fallback applies.
+/// The first supplied list wins.
 fn pick_strings(layers: &[Option<&[String]>], fallback: &[String]) -> Vec<String> {
 	layers
 		.iter()
@@ -381,7 +374,7 @@ mod tests {
 	}
 
 	#[test]
-	fn built_in_defaults_apply_when_nothing_is_specified() {
+	fn defaults_apply_when_unset() {
 		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
 		assert_eq!(c.locales_dir, PathBuf::from("/repo/locales"));
 		assert_eq!(c.manifest_path, PathBuf::from("/repo/Cargo.toml"));
@@ -394,15 +387,13 @@ mod tests {
 		assert_eq!(c.exclude, vec!["target/**".to_owned()]);
 		assert_eq!(c.unused, Severity::Warn);
 		assert!(c.attributes);
-		assert!(!c.include_comments);
-		assert!(c.require_locales);
 		assert!(c.follow_links);
 		assert!(!c.quiet);
 		assert_eq!(c.format, OutputFormat::Text);
 	}
 
 	#[test]
-	fn discovery_fills_the_lists_that_have_no_built_in_default() {
+	fn discovery_fills_undefaulted_lists() {
 		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
 		assert_eq!(c.src, vec![PathBuf::from("/repo/types/src")]);
 		assert_eq!(c.templates, vec![PathBuf::from("/repo/types/templates")]);
@@ -410,7 +401,7 @@ mod tests {
 	}
 
 	#[test]
-	fn the_cli_beats_the_config_file() {
+	fn cli_over_config_file() {
 		let cli = PartialConfig {
 			locales_dir: Some(PathBuf::from("from-cli")),
 			unused: Some(Severity::Error),
@@ -425,12 +416,12 @@ mod tests {
 		let c = resolved(&cli, &file);
 		assert_eq!(c.locales_dir, PathBuf::from("/repo/from-cli"));
 		assert_eq!(c.unused, Severity::Error);
-		// A key only the file sets still applies.
+		// A file-only key still applies.
 		assert!(c.quiet);
 	}
 
 	#[test]
-	fn the_config_file_beats_discovery() {
+	fn config_file_over_discovery() {
 		let file = PartialConfig {
 			src: Some(vec![PathBuf::from("only/this")]),
 			locales: Some(vec!["de".to_owned()]),
@@ -442,7 +433,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_replace_list_wins_outright_with_no_union() {
+	fn replace_list_over_everything() {
 		let cli = PartialConfig {
 			src: Some(vec![PathBuf::from("a")]),
 			..PartialConfig::default()
@@ -456,7 +447,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_add_list_unions_every_layer_and_extends_the_base() {
+	fn add_list_extends_base() {
 		let cli = PartialConfig {
 			src: Some(vec![PathBuf::from("base")]),
 			add_src: Some(vec![PathBuf::from("from-cli")]),
@@ -478,7 +469,7 @@ mod tests {
 	}
 
 	#[test]
-	fn add_without_replace_extends_what_was_discovered() {
+	fn add_extends_discovered_list() {
 		let cli = PartialConfig {
 			add_src: Some(vec![PathBuf::from("extra/src")]),
 			..PartialConfig::default()
@@ -505,7 +496,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_absolute_override_is_left_alone() {
+	fn absolute_override() {
 		let cli = PartialConfig {
 			locales_dir: Some(PathBuf::from("/elsewhere/i18n")),
 			..PartialConfig::default()
@@ -515,7 +506,7 @@ mod tests {
 	}
 
 	#[test]
-	fn the_reference_locale_prefers_en_then_the_first_sorted() {
+	fn reference_locale_fallback() {
 		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
 		assert_eq!(c.reference_locale, "en");
 
@@ -539,7 +530,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_template_extension_is_normalized() {
+	fn template_ext_normalized() {
 		let cli = PartialConfig {
 			template_ext: Some(vec![".J2".to_owned(), "HTML".to_owned()]),
 			..PartialConfig::default()
@@ -552,7 +543,7 @@ mod tests {
 	}
 
 	#[test]
-	fn an_explicitly_empty_list_overrides_the_default() {
+	fn empty_list_overrides_default() {
 		let cli = PartialConfig {
 			exclude: Some(Vec::new()),
 			..PartialConfig::default()
@@ -561,13 +552,13 @@ mod tests {
 	}
 
 	#[test]
-	fn paths_are_reported_relative_to_the_root() {
+	fn paths_report_as_relative() {
 		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
 		assert_eq!(
 			c.relative(Path::new("/repo/types/src/lib.rs")),
 			PathBuf::from("types/src/lib.rs")
 		);
-		// Outside the root, the path is left as it is rather than mangled.
+		// Outside the root the path stays unchanged.
 		assert_eq!(
 			c.relative(Path::new("/elsewhere/lib.rs")),
 			PathBuf::from("/elsewhere/lib.rs")
@@ -575,7 +566,7 @@ mod tests {
 	}
 
 	#[test]
-	fn resolving_twice_gives_the_same_answer() {
+	fn resolving_twice_is_stable() {
 		let a = resolved(&PartialConfig::default(), &PartialConfig::default());
 		let b = resolved(&PartialConfig::default(), &PartialConfig::default());
 		assert_eq!(a, b);

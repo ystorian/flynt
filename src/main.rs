@@ -10,7 +10,7 @@ use clap::Parser;
 use flynt::config::{self, PartialConfig};
 use flynt::report;
 
-/// Exit code for a problem with flynt itself or its configuration.
+/// Exit code for an internal problem.
 const TOOL_ERROR: u8 = 2;
 
 fn main() -> ExitCode {

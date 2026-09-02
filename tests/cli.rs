@@ -1,6 +1,6 @@
 // tests/cli.rs
 
-//! Process-level checks: exit codes, formats, and configuration precedence.
+//! Process-level checks: exit codes and formats.
 
 mod support;
 
@@ -9,18 +9,18 @@ use std::process::{Command, Output};
 
 use support::fixture;
 
-/// Runs the built binary with the given arguments.
+/// Runs the built binary.
 fn run_in(cwd: &Path, args: &[&str]) -> Output {
 	Command::new(env!("CARGO_BIN_EXE_flynt"))
 		.current_dir(cwd)
 		.args(args)
-		// Keep the output stable regardless of where the suite runs.
+		// Keep output stable across run locations.
 		.env("NO_COLOR", "1")
 		.output()
 		.expect("cannot run the flynt binary")
 }
 
-/// Runs against a fixture from a directory that is not the fixture itself.
+/// Runs against a fixture from elsewhere.
 fn run(name: &str, args: &[&str]) -> Output {
 	let path = fixture(name);
 	let path = path.to_str().expect("the fixture path is UTF-8");
@@ -45,7 +45,7 @@ fn stderr(output: &Output) -> String {
 }
 
 #[test]
-fn a_clean_tree_exits_zero() {
+fn clean_tree_exits_zero() {
 	let output = run("clean", &[]);
 	assert_eq!(code(&output), 0, "{}", stderr(&output));
 	assert!(stdout(&output).contains("All translation keys validated"));
@@ -65,7 +65,7 @@ fn findings_exit_one() {
 }
 
 #[test]
-fn a_configuration_problem_exits_two() {
+fn configuration_problem_exits_two() {
 	for fixture in ["no_locales", "empty_locales"] {
 		let output = run(fixture, &[]);
 		assert_eq!(code(&output), 2, "{fixture}: {}", stderr(&output));
@@ -78,7 +78,7 @@ fn a_configuration_problem_exits_two() {
 }
 
 #[test]
-fn a_path_that_does_not_exist_exits_two() {
+fn missing_path_exits_two() {
 	let output = run_in(
 		Path::new(env!("CARGO_MANIFEST_DIR")),
 		&["./no-such-directory-xyz"],
@@ -88,7 +88,7 @@ fn a_path_that_does_not_exist_exits_two() {
 }
 
 #[test]
-fn a_warning_alone_still_exits_zero() {
+fn warning_alone_exits_zero() {
 	let output = run("unused", &[]);
 	assert_eq!(code(&output), 0, "{}", stderr(&output));
 	assert!(stdout(&output).contains("Warning:"));
@@ -96,14 +96,14 @@ fn a_warning_alone_still_exits_zero() {
 }
 
 #[test]
-fn unused_can_be_promoted_to_an_error() {
+fn unused_promotes_to_error() {
 	let output = run("unused", &["--unused", "error"]);
 	assert_eq!(code(&output), 1);
 	assert!(stdout(&output).contains("Error:"));
 }
 
 #[test]
-fn the_json_format_is_valid_and_carries_the_findings() {
+fn json_format_carries_findings() {
 	let output = run("missing_key", &["--format", "json"]);
 	assert_eq!(code(&output), 1);
 
@@ -120,26 +120,26 @@ fn the_json_format_is_valid_and_carries_the_findings() {
 }
 
 #[test]
-fn the_config_file_at_the_root_is_picked_up() {
+fn config_file_root_used() {
 	let output = run("config_file", &[]);
 	assert_eq!(code(&output), 0, "{}", stderr(&output));
 }
 
 #[test]
-fn a_flag_beats_the_config_file() {
+fn flag_beats_config_file() {
 	let output = run("config_file", &["--locales-dir", "locales"]);
 	assert_eq!(code(&output), 2, "{}", stdout(&output));
 	assert!(stderr(&output).contains("locales directory does not exist"));
 }
 
 #[test]
-fn the_config_file_can_be_ignored() {
+fn no_config_skips_file() {
 	let output = run("config_file", &["--no-config"]);
 	assert_eq!(code(&output), 2, "{}", stdout(&output));
 }
 
 #[test]
-fn a_config_file_can_be_named_explicitly() {
+fn config_file_named_explicitly() {
 	let path = fixture("config_file").join(".flynt.toml");
 	let output = run(
 		"config_file",
@@ -149,14 +149,14 @@ fn a_config_file_can_be_named_explicitly() {
 }
 
 #[test]
-fn a_named_config_file_that_is_missing_is_an_error() {
+fn missing_named_config_errors() {
 	let output = run("clean", &["--config", "does-not-exist.toml"]);
 	assert_eq!(code(&output), 2);
 	assert!(stderr(&output).contains("cannot read the config file"));
 }
 
 #[test]
-fn the_working_directory_does_not_change_the_result() {
+fn result_ignores_cwd() {
 	let fixture_path = fixture("missing_key");
 	let absolute = fixture_path.to_str().expect("the path is UTF-8");
 	let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -171,13 +171,13 @@ fn the_working_directory_does_not_change_the_result() {
 }
 
 #[test]
-fn the_default_path_is_the_current_directory() {
+fn default_path_is_cwd() {
 	let output = run_in(&fixture("clean"), &[]);
 	assert_eq!(code(&output), 0, "{}", stderr(&output));
 }
 
 #[test]
-fn quiet_says_nothing_when_there_is_nothing_to_say() {
+fn quiet_says_nothing() {
 	let output = run("clean", &["--quiet"]);
 	assert_eq!(code(&output), 0);
 	assert!(stdout(&output).is_empty(), "{:?}", stdout(&output));
@@ -198,12 +198,12 @@ fn help_documents_the_overrides() {
 	let help = stdout(&output);
 	for flag in [
 		"--locales-dir",
-		"--locale",
+		"--locales",
 		"--src",
 		"--add-src",
 		"--templates",
-		"--filter",
-		"--function",
+		"--filters",
+		"--functions",
 		"--unused",
 		"--format",
 	] {
@@ -215,14 +215,14 @@ fn help_documents_the_overrides() {
 }
 
 #[test]
-fn an_unknown_flag_is_rejected() {
+fn unknown_flag_rejected() {
 	let output = run_in(Path::new(env!("CARGO_MANIFEST_DIR")), &["--nope"]);
 	assert_ne!(code(&output), 0);
 	assert!(stderr(&output).contains("--nope"));
 }
 
 #[test]
-fn extra_source_directories_can_be_added() {
+fn extra_src_dirs_added() {
 	let output = run("member_without_src", &["--add-src", "b/lib"]);
 	assert_eq!(code(&output), 1, "{}", stdout(&output));
 	assert!(
