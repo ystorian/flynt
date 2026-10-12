@@ -1,12 +1,24 @@
 # deny.toml
+# Last refresh: 2026-10-12
+
+[bans]
+multiple-versions-include-dev = true
+wildcards = "deny"
+workspace-default-features = "deny"
+
+[bans.workspace-dependencies]
+duplicates = "deny"
+include-path-dependencies = true
+unused = "deny"
+
+[bans.std-replacements]
+level = "deny"
+rust-version = "1.99"
+ignore-rust-version = "none"
 
 [licenses]
-unused-allowed-license = "allow"
 version = 2
 allow = ["Apache-2.0", "MIT", "Unicode-3.0"]
 
 [advisories]
-unmaintained = "workspace"
-
-# Project specific advisories.
 ignore = []

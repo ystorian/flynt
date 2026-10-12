@@ -1,16 +1,17 @@
-# justfile
+# @template/justfile
 
-# Set the minimum Just version.
+# Tip:
+# - Alias `j` to `just`: `just alias_just`
+
+# These recipes use features that require a recent version of Just.
 set minimum-version := '1.58.0'
 
 # Set the default shell on Windows to `bash` (installed with Git).
-set windows-shell := ['C:\Program Files\Git\bin\bash.exe', '-cu']
+[windows]
+set shell := ['C:\Program Files\Git\bin\bash.exe', '-cu']
 
 # Don't print comments.
 set ignore-comments
-
-# Allow variable redefinition.
-set allow-duplicate-variables
 
 # Be quiet.
 set quiet
@@ -24,24 +25,16 @@ set lists
 # Skip evaluating unused variables.
 set lazy
 
-# Import common recipes
-import? '.just/ci.just'
-import? '.just/git.just'
-import? '.just/github.just'
-import? '.just/utils.just'
+# Use the `?` sigil to prefix a command.
+# Prefixed commands with exit 1 will stop the current recipe, without stopping other recipes.
+set guards
 
-# List the commands when called without parameters.
+# Import common recipes.
+import '.just/utils.just'
+
+# Import recipes for this project.
+import '.just/_main.just'
+
+# List the recipes when called without parameters.
 _:
-	# List recipes.
 	just --list
-
-## Project specifics.
-
-# Project variables.
-
-# Project recipes.
-import '.just/flynt.just'
-
-# Project language recipes.
-import '.just/cargo.just'
-import '.just/rust.just'
