@@ -1,4 +1,19 @@
-# .rustfmt.toml
+# @template/.rustfmt.toml
 
-# Use tabs. This is the way.
+# Specifies which edition is used by the parser (default: 2015).
+edition = "2024"
+
+# Controls the edition of the Rust Style Guide to use for formatting (default: 2015).
+style_edition = "2024"
+
+# Control the case of the letters in hexadecimal literal values (default: Preserve).
+hex_literal_case = "Lower"
+
+# Use tab characters for indentation, spaces for alignment (default: false).
 hard_tabs = true
+
+# Unix or Windows line endings (default: Auto).
+newline_style = "Unix"
+
+# Replace uses of the `try!` macro by the `?` shorthand (default: false).
+use_try_shorthand = true

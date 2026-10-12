@@ -1,5 +1,4 @@
-# .editorconfig
-# Last refresh: 2026-03-23
+# @template/.editorconfig
 
 # top-most EditorConfig file.
 root = true
@@ -27,12 +26,12 @@ tab_width = unset
 max_line_length = 100
 
 
-# Specific file format.
+# Specific file formats.
 
 # Markdown.
 [**.md]
-# Do not remove trailing whitespace for Markdown files.
-trim_trailing_whitespace = false
+trim_trailing_whitespace = unset
+indent_style = unset
 
 # Fluent.
 [*.flt]
@@ -48,3 +47,33 @@ indent_brace_style = K&R
 [*.{yml,yaml}]
 indent_size = 2
 indent_style = space
+
+# Licenses.
+[LICENSE*]
+indent_style = unset
+
+# SQLx.
+[.sqlx/**]
+max_line_length = unset
+indent_style = unset
+
+# Just recipes.
+[{justfile, *.just}]
+max_line_length = unset
+
+# GitHub Actions.
+[.github/workflows/*.yaml]
+max_line_length = unset
+
+# OpenTofu / Terraform.
+[*.tf]
+indent_size = 2
+indent_style = space
+max_line_length = unset
+
+# D2.
+[*.d2]
+indent_size = 2
+indent_style = space
+
+# Project specific files.

@@ -26,7 +26,12 @@ env:
   # Disable incremental compilation for faster from-scratch builds.
   CARGO_INCREMENTAL: 0
 
+  # Link with LLVM's lld-link on Windows, faster than the default linker.
+  CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
+
   # Pinned minisign release, used by the `sign` job.
+  # See https://github.com/jedisct1/minisign/releases
   MINISIGN_VERSION: "0.12"
   MINISIGN_SHA256: 9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73
 
@@ -151,6 +156,12 @@ jobs:
 
       - name: Add the Rust target
         run: rustup target add "$TARGET"
+
+      - name: Linux - Setup Mold
+        if: startsWith(matrix.os, 'ubuntu')
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        with:
+          mold-version: 3.0.0
 
       - name: Build
         run: cargo build --locked --release --target "$TARGET"

@@ -1,36 +1,56 @@
-# .github/filters.yaml
+# @template/.github/filters.yaml
 
-# Shared path filters used by the `changes` job.
+# Shared path filters for `dorny/paths-filter` in the `changes` job.
 #
-# Modified files that are not filtered by these exclusions will trigger the `test` jobs in:
-# - `.github/workflows/ci-rust.yaml`
-#
-# The step `Detect file changes based on filters.yaml` uses `dorny/paths-filter` with
-# `predicate-quantifier = every`:
-# - this is AND semantics
-# - it's not possible to re-include a file with a positive pattern
-# - exclude only the files to skip, tipically docs and dev config files
+# The filter is set  with `predicate-quantifier = every`:
+# - This is an AND semantics.
+# - It's not possible to re-include a file with a positive pattern.
 
-# Common exclusions, ignored in all actions.
+
+# [shared] Common exclusions, changes in these files are ignored in all actions.
 _common: &common
-  - "**" # Must begin with `**`.
-  - "!**.md"
+  # Must begin with `**`.
+  - "**"
+  # Markdown.
+  - "!**/*.md"
+  # Licenses.
+  - "!LICENSE*"
+  # Just recipes.
+  - "!justfile"
+  - "!.just/**"
+  # Rust.
   - "!.clippy.toml"
+  - "!.rustfmt.toml"
+  # Local dev.
+  - "!compose.Dockerfile"
+  - "!compose.yaml"
+  - "!droast.toml"
   - "!.editorconfig"
   - "!.env*"
   - "!.githooks/**"
-  - "!.github/filters.yaml"
-  - "!justfile"
-  - "!.just/**"
-  - "!LICENSE*"
   - "!.markdownlint.json"
+  # This file.
+  - "!.github/filters.yaml"
 
-#  Release exclusions, ignored in release actions.
-_release: &release
-  - "!.gitignore"
+  # [shared] Common exclusions of CI files, for release filters.
+_ci: &ci
   - "!deny.toml"
-  - "!.github/workflows/ci**"
+  - "!.gitignore"
+  - "!.github/workflows/ci**.yaml"
 
-# CI: rebuild on any source change.
+  # [shared] Common exclusions of release files, for CI filter.
+_release: &release
+  - "!*Dockerfile*"
+  - "!.dockerignore"
+  - "!.github/workflows/release*.yaml"
+
+
+# CI: Ignore files only used in release.
 ci:
   - *common
+  - *release
+
+# Release: Ignore files only used in CI.
+release:
+  - *common
+  - *ci
