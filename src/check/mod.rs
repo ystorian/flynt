@@ -8,6 +8,7 @@ pub mod duplicates;
 pub mod unused;
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 use anyhow::{Result, ensure};
 
@@ -33,7 +34,7 @@ pub fn run(config: &Config) -> Result<Report> {
 	let parsed = fluent::parse_locales(config, &walker)?;
 	require_locale_contents(config, &parsed)?;
 
-	let used: BTreeSet<String> = found.usages.iter().map(|u| u.key.clone()).collect();
+	let used: BTreeSet<String> = found.usages.iter().map(|usage| usage.key.clone()).collect();
 	let defined: BTreeSet<&String> = parsed
 		.locales
 		.values()
@@ -117,11 +118,11 @@ fn require_locale_contents(config: &Config, parsed: &Parsed) -> Result<()> {
 }
 
 /// Describes the directories for an error message.
-fn describe(src: &[std::path::PathBuf], templates: &[std::path::PathBuf]) -> String {
+fn describe(src: &[PathBuf], templates: &[PathBuf]) -> String {
 	let mut all: Vec<String> = src
 		.iter()
 		.chain(templates)
-		.map(|p| p.display().to_string())
+		.map(|path| path.display().to_string())
 		.collect();
 	all.sort();
 	if all.is_empty() {
@@ -133,6 +134,7 @@ fn describe(src: &[std::path::PathBuf], templates: &[std::path::PathBuf]) -> Str
 
 #[cfg(test)]
 pub(crate) mod tests {
+	use std::collections::BTreeSet;
 	use std::path::PathBuf;
 
 	use crate::model::{KeyDefinition, KeyUsage, LocaleKeys, Location, UsageType};
@@ -146,9 +148,9 @@ pub(crate) mod tests {
 			locale: name.to_owned(),
 			keys: keys
 				.iter()
-				.map(|k| {
+				.map(|key| {
 					(
-						(*k).to_owned(),
+						(*key).to_owned(),
 						vec![KeyDefinition {
 							at: Location {
 								file: PathBuf::from(format!("locales/{name}/a.ftl")),
@@ -159,7 +161,7 @@ pub(crate) mod tests {
 					)
 				})
 				.collect(),
-			terms: terms.iter().map(|t| (*t).to_owned()).collect(),
+			terms: terms.iter().map(|term| (*term).to_owned()).collect(),
 		}
 	}
 
@@ -185,7 +187,7 @@ pub(crate) mod tests {
 					)
 				})
 				.collect(),
-			terms: std::collections::BTreeSet::new(),
+			terms: BTreeSet::new(),
 		}
 	}
 

@@ -80,13 +80,13 @@ pub fn parse_locales(config: &Config, walker: &Walker) -> Result<Parsed> {
 		parsed.locales.insert(locale.clone(), keys);
 	}
 
-	parsed.errors.sort_by(|a, b| a.at.cmp(&b.at));
+	parsed.errors.sort_by(|left, right| left.at.cmp(&right.at));
 	Ok(parsed)
 }
 
 /// Whether a path is a Fluent file.
 fn is_fluent(path: &Path) -> bool {
-	path.extension().and_then(|e| e.to_str()) == Some("ftl")
+	path.extension().and_then(|extension| extension.to_str()) == Some("ftl")
 }
 
 /// One file's contribution.
@@ -114,20 +114,21 @@ fn parse_file(content: &str, path: &Path, attributes: bool) -> File {
 
 	for entry in resource.body {
 		let (id, attrs, is_term) = match entry {
-			Entry::Message(m) => (
-				m.id.name.to_owned(),
-				m.attributes
+			Entry::Message(message) => (
+				message.id.name.to_owned(),
+				message
+					.attributes
 					.iter()
-					.map(|a| a.id.name.to_owned())
+					.map(|attribute| attribute.id.name.to_owned())
 					.collect::<Vec<_>>(),
 				false,
 			),
-			Entry::Term(t) => (
+			Entry::Term(term) => (
 				// A term keeps its leading dash.
-				format!("-{}", t.id.name),
-				t.attributes
+				format!("-{}", term.id.name),
+				term.attributes
 					.iter()
-					.map(|a| a.id.name.to_owned())
+					.map(|attribute| attribute.id.name.to_owned())
 					.collect::<Vec<_>>(),
 				true,
 			),
@@ -156,21 +157,22 @@ fn parse_file(content: &str, path: &Path, attributes: bool) -> File {
 		terms,
 		errors: errors
 			.into_iter()
-			.map(|e| {
-				let (line, column) = index.locate(e.pos.start);
+			.map(|error| {
+				let (line, column) = index.locate(error.pos.start);
 				ParseError {
 					at: Location {
 						file: path.to_path_buf(),
 						line,
 						column,
 					},
-					message: e.kind.to_string(),
+					message: error.kind.to_string(),
 				}
 			})
 			.collect(),
 	}
 }
 
+/// Builds a definition at `line`.
 fn definition(path: &Path, line: usize) -> KeyDefinition {
 	KeyDefinition {
 		at: Location {
@@ -221,7 +223,7 @@ mod tests {
 		parse_file(content, Path::new("locales/en/a.ftl"), attributes)
 			.definitions
 			.into_iter()
-			.map(|(k, d)| (k, d.at.line))
+			.map(|(key, definition)| (key, definition.at.line))
 			.collect()
 	}
 
@@ -294,7 +296,7 @@ mod tests {
 		let content = "good = Fine\ng@Rb@ge = #2y ds\nalso-good = Fine\n";
 		let file = parse_file(content, Path::new("locales/en/broken.ftl"), true);
 
-		let keys: Vec<String> = file.definitions.into_iter().map(|(k, _)| k).collect();
+		let keys: Vec<String> = file.definitions.into_iter().map(|(key, _)| key).collect();
 		assert!(keys.contains(&"good".to_owned()), "{keys:?}");
 		assert!(!file.errors.is_empty(), "the junk entry must be reported");
 
@@ -302,7 +304,7 @@ mod tests {
 		assert_eq!(error.at.file, Path::new("locales/en/broken.ftl"));
 		assert_eq!(error.at.line, 2);
 		// The real parser message, not a count.
-		assert!(!error.message.is_empty());
+		assert_ne!(error.message, "");
 		assert!(
 			error.message.contains("Expected") || error.message.contains("expected"),
 			"unexpected message: {}",
@@ -313,7 +315,7 @@ mod tests {
 	#[test]
 	fn clean_file_no_errors() {
 		let file = parse_file("a = One\nb = Two\n", Path::new("a.ftl"), true);
-		assert!(file.errors.is_empty());
+		assert_eq!(file.errors, Vec::<ParseError>::new());
 	}
 
 	#[test]

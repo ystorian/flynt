@@ -13,9 +13,10 @@ pub mod manifest;
 mod partial;
 
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use clap::ValueEnum;
 use serde::Deserialize;
 
@@ -86,7 +87,6 @@ pub struct Discovered {
 }
 
 /// A fully resolved configuration.
-#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
 	/// The directory being linted.
@@ -139,7 +139,7 @@ pub struct Config {
 ///
 pub fn load(cli: &PartialConfig) -> Result<Config> {
 	let requested = cli.root.clone().unwrap_or_else(|| PathBuf::from("."));
-	let root = std::fs::canonicalize(&requested)
+	let root = fs::canonicalize(&requested)
 		.with_context(|| format!("cannot read the directory to lint: {}", requested.display()))?;
 	anyhow::ensure!(
 		root.is_dir(),
@@ -151,10 +151,13 @@ pub fn load(cli: &PartialConfig) -> Result<Config> {
 
 	// Get the manifest first.
 	let manifest_path = first_path(&[cli.manifest_path.as_deref(), file.manifest_path.as_deref()])
-		.map_or_else(|| root.join("Cargo.toml"), |p| absolutize(&root, p));
+		.map_or_else(|| root.join("Cargo.toml"), |path| absolutize(&root, path));
 
 	let locales_dir = first_path(&[cli.locales_dir.as_deref(), file.locales_dir.as_deref()])
-		.map_or_else(|| root.join(DEFAULT_LOCALES_DIR), |p| absolutize(&root, p));
+		.map_or_else(
+			|| root.join(DEFAULT_LOCALES_DIR),
+			|path| absolutize(&root, path),
+		);
 
 	let members = manifest::members(&root, &manifest_path)?;
 	let discovered = Discovered {
@@ -180,7 +183,7 @@ fn read_config_file(cli: &PartialConfig, root: &Path) -> Result<PartialConfig> {
 
 	// An explicit `--config` must exist.
 	let (path, required) = match cli.config.as_deref() {
-		Some(p) => (absolutize(root, p), true),
+		Some(config) => (absolutize(root, config), true),
 		None => (root.join(CONFIG_FILE), false),
 	};
 
@@ -188,7 +191,7 @@ fn read_config_file(cli: &PartialConfig, root: &Path) -> Result<PartialConfig> {
 		return Ok(PartialConfig::default());
 	}
 
-	let text = std::fs::read_to_string(&path)
+	let text = fs::read_to_string(&path)
 		.with_context(|| format!("cannot read the config file: {}", path.display()))?;
 	toml::from_str(&text).with_context(|| format!("cannot parse {}", path.display()))
 }
@@ -231,9 +234,12 @@ pub fn resolve(
 	Config {
 		root: root.to_path_buf(),
 		manifest_path: first_path(&[cli.manifest_path.as_deref(), file.manifest_path.as_deref()])
-			.map_or_else(|| root.join("Cargo.toml"), |p| absolutize(root, p)),
+			.map_or_else(|| root.join("Cargo.toml"), |path| absolutize(root, path)),
 		locales_dir: first_path(&[cli.locales_dir.as_deref(), file.locales_dir.as_deref()])
-			.map_or_else(|| root.join(DEFAULT_LOCALES_DIR), |p| absolutize(root, p)),
+			.map_or_else(
+				|| root.join(DEFAULT_LOCALES_DIR),
+				|path| absolutize(root, path),
+			),
 		locales,
 		reference_locale,
 		src: merge_paths(src, add_src),
@@ -243,7 +249,7 @@ pub fn resolve(
 			&defaults(DEFAULT_TEMPLATE_EXT),
 		)
 		.into_iter()
-		.map(|e| e.trim_start_matches('.').to_lowercase())
+		.map(|ext| ext.trim_start_matches('.').to_lowercase())
 		.collect(),
 		filters: pick_strings(
 			&[cli.filters.as_deref(), file.filters.as_deref()],
@@ -288,7 +294,7 @@ impl Config {
 fn default_reference_locale(locales: &[String]) -> String {
 	locales
 		.iter()
-		.find(|l| *l == PREFERRED_REFERENCE_LOCALE)
+		.find(|locale| *locale == PREFERRED_REFERENCE_LOCALE)
 		.or_else(|| locales.first())
 		.cloned()
 		.unwrap_or_else(|| PREFERRED_REFERENCE_LOCALE.to_owned())
@@ -303,16 +309,19 @@ fn absolutize(root: &Path, path: &Path) -> PathBuf {
 	}
 }
 
+/// The first supplied path wins.
 fn first_path<'a>(layers: &[Option<&'a Path>]) -> Option<&'a Path> {
 	layers.iter().copied().flatten().next()
 }
 
+/// The first supplied string wins.
 fn first_string<'a>(layers: &[Option<&'a str>]) -> Option<&'a str> {
 	layers.iter().copied().flatten().next()
 }
 
+/// Converts default values to owned strings.
 fn defaults(values: &[&str]) -> Vec<String> {
-	values.iter().map(|v| (*v).to_owned()).collect()
+	values.iter().map(|value| (*value).to_owned()).collect()
 }
 
 /// The first supplied list wins.
@@ -330,7 +339,7 @@ fn pick_strings(layers: &[Option<&[String]>], fallback: &[String]) -> Vec<String
 fn pick_paths(layers: &[Option<&[PathBuf]>], fallback: &[PathBuf], root: &Path) -> Vec<PathBuf> {
 	layers.iter().copied().flatten().next().map_or_else(
 		|| fallback.to_vec(),
-		|paths| paths.iter().map(|p| absolutize(root, p)).collect(),
+		|paths| paths.iter().map(|path| absolutize(root, path)).collect(),
 	)
 }
 
@@ -340,7 +349,7 @@ fn collect_paths(layers: &[Option<&[PathBuf]>], root: &Path) -> Vec<PathBuf> {
 		.iter()
 		.copied()
 		.flatten()
-		.flat_map(|paths| paths.iter().map(|p| absolutize(root, p)))
+		.flat_map(|paths| paths.iter().map(|path| absolutize(root, path)))
 		.collect()
 }
 
@@ -375,29 +384,32 @@ mod tests {
 
 	#[test]
 	fn defaults_apply_when_unset() {
-		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
-		assert_eq!(c.locales_dir, PathBuf::from("/repo/locales"));
-		assert_eq!(c.manifest_path, PathBuf::from("/repo/Cargo.toml"));
-		assert_eq!(c.template_ext, vec!["html".to_owned()]);
-		assert_eq!(c.filters, vec!["t".to_owned(), "tn".to_owned()]);
+		let config = resolved(&PartialConfig::default(), &PartialConfig::default());
+		assert_eq!(config.locales_dir, PathBuf::from("/repo/locales"));
+		assert_eq!(config.manifest_path, PathBuf::from("/repo/Cargo.toml"));
+		assert_eq!(config.template_ext, vec!["html".to_owned()]);
+		assert_eq!(config.filters, vec!["t".to_owned(), "tn".to_owned()]);
 		assert_eq!(
-			c.functions,
+			config.functions,
 			vec!["loc".to_owned(), "loc_with_args".to_owned()]
 		);
-		assert_eq!(c.exclude, vec!["target/**".to_owned()]);
-		assert_eq!(c.unused, Severity::Warn);
-		assert!(c.attributes);
-		assert!(c.follow_links);
-		assert!(!c.quiet);
-		assert_eq!(c.format, OutputFormat::Text);
+		assert_eq!(config.exclude, vec!["target/**".to_owned()]);
+		assert_eq!(config.unused, Severity::Warn);
+		assert!(config.attributes);
+		assert!(config.follow_links);
+		assert!(!config.quiet);
+		assert_eq!(config.format, OutputFormat::Text);
 	}
 
 	#[test]
 	fn discovery_fills_undefaulted_lists() {
-		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
-		assert_eq!(c.src, vec![PathBuf::from("/repo/types/src")]);
-		assert_eq!(c.templates, vec![PathBuf::from("/repo/types/templates")]);
-		assert_eq!(c.locales, vec!["en".to_owned(), "fr".to_owned()]);
+		let config = resolved(&PartialConfig::default(), &PartialConfig::default());
+		assert_eq!(config.src, vec![PathBuf::from("/repo/types/src")]);
+		assert_eq!(
+			config.templates,
+			vec![PathBuf::from("/repo/types/templates")]
+		);
+		assert_eq!(config.locales, vec!["en".to_owned(), "fr".to_owned()]);
 	}
 
 	#[test]
@@ -413,11 +425,11 @@ mod tests {
 			quiet: Some(true),
 			..PartialConfig::default()
 		};
-		let c = resolved(&cli, &file);
-		assert_eq!(c.locales_dir, PathBuf::from("/repo/from-cli"));
-		assert_eq!(c.unused, Severity::Error);
+		let config = resolved(&cli, &file);
+		assert_eq!(config.locales_dir, PathBuf::from("/repo/from-cli"));
+		assert_eq!(config.unused, Severity::Error);
 		// A file-only key still applies.
-		assert!(c.quiet);
+		assert!(config.quiet);
 	}
 
 	#[test]
@@ -427,9 +439,9 @@ mod tests {
 			locales: Some(vec!["de".to_owned()]),
 			..PartialConfig::default()
 		};
-		let c = resolved(&PartialConfig::default(), &file);
-		assert_eq!(c.src, vec![PathBuf::from("/repo/only/this")]);
-		assert_eq!(c.locales, vec!["de".to_owned()]);
+		let config = resolved(&PartialConfig::default(), &file);
+		assert_eq!(config.src, vec![PathBuf::from("/repo/only/this")]);
+		assert_eq!(config.locales, vec!["de".to_owned()]);
 	}
 
 	#[test]
@@ -442,8 +454,8 @@ mod tests {
 			src: Some(vec![PathBuf::from("b")]),
 			..PartialConfig::default()
 		};
-		let c = resolved(&cli, &file);
-		assert_eq!(c.src, vec![PathBuf::from("/repo/a")]);
+		let config = resolved(&cli, &file);
+		assert_eq!(config.src, vec![PathBuf::from("/repo/a")]);
 	}
 
 	#[test]
@@ -457,9 +469,9 @@ mod tests {
 			add_src: Some(vec![PathBuf::from("from-file")]),
 			..PartialConfig::default()
 		};
-		let c = resolved(&cli, &file);
+		let config = resolved(&cli, &file);
 		assert_eq!(
-			c.src,
+			config.src,
 			vec![
 				PathBuf::from("/repo/base"),
 				PathBuf::from("/repo/from-cli"),
@@ -474,9 +486,9 @@ mod tests {
 			add_src: Some(vec![PathBuf::from("extra/src")]),
 			..PartialConfig::default()
 		};
-		let c = resolved(&cli, &PartialConfig::default());
+		let config = resolved(&cli, &PartialConfig::default());
 		assert_eq!(
-			c.src,
+			config.src,
 			vec![
 				PathBuf::from("/repo/extra/src"),
 				PathBuf::from("/repo/types/src"),
@@ -491,8 +503,8 @@ mod tests {
 			add_src: Some(vec![PathBuf::from("a")]),
 			..PartialConfig::default()
 		};
-		let c = resolved(&cli, &PartialConfig::default());
-		assert_eq!(c.src, vec![PathBuf::from("/repo/a")]);
+		let config = resolved(&cli, &PartialConfig::default());
+		assert_eq!(config.src, vec![PathBuf::from("/repo/a")]);
 	}
 
 	#[test]
@@ -501,14 +513,14 @@ mod tests {
 			locales_dir: Some(PathBuf::from("/elsewhere/i18n")),
 			..PartialConfig::default()
 		};
-		let c = resolved(&cli, &PartialConfig::default());
-		assert_eq!(c.locales_dir, PathBuf::from("/elsewhere/i18n"));
+		let config = resolved(&cli, &PartialConfig::default());
+		assert_eq!(config.locales_dir, PathBuf::from("/elsewhere/i18n"));
 	}
 
 	#[test]
 	fn reference_locale_fallback() {
-		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
-		assert_eq!(c.reference_locale, "en");
+		let config = resolved(&PartialConfig::default(), &PartialConfig::default());
+		assert_eq!(config.reference_locale, "en");
 
 		let cli = PartialConfig {
 			locales: Some(vec!["de".to_owned(), "fr".to_owned()]),
@@ -535,11 +547,14 @@ mod tests {
 			template_ext: Some(vec![".J2".to_owned(), "HTML".to_owned()]),
 			..PartialConfig::default()
 		};
-		let c = resolved(&cli, &PartialConfig::default());
-		assert_eq!(c.template_ext, vec!["j2".to_owned(), "html".to_owned()]);
-		assert!(c.is_template_ext("j2"));
-		assert!(c.is_template_ext("HtMl"));
-		assert!(!c.is_template_ext("txt"));
+		let config = resolved(&cli, &PartialConfig::default());
+		assert_eq!(
+			config.template_ext,
+			vec!["j2".to_owned(), "html".to_owned()]
+		);
+		assert!(config.is_template_ext("j2"));
+		assert!(config.is_template_ext("HtMl"));
+		assert!(!config.is_template_ext("txt"));
 	}
 
 	#[test]
@@ -548,27 +563,30 @@ mod tests {
 			exclude: Some(Vec::new()),
 			..PartialConfig::default()
 		};
-		assert!(resolved(&cli, &PartialConfig::default()).exclude.is_empty());
+		assert_eq!(
+			resolved(&cli, &PartialConfig::default()).exclude,
+			Vec::<String>::new()
+		);
 	}
 
 	#[test]
 	fn paths_report_as_relative() {
-		let c = resolved(&PartialConfig::default(), &PartialConfig::default());
+		let config = resolved(&PartialConfig::default(), &PartialConfig::default());
 		assert_eq!(
-			c.relative(Path::new("/repo/types/src/lib.rs")),
+			config.relative(Path::new("/repo/types/src/lib.rs")),
 			PathBuf::from("types/src/lib.rs")
 		);
 		// Outside the root the path stays unchanged.
 		assert_eq!(
-			c.relative(Path::new("/elsewhere/lib.rs")),
+			config.relative(Path::new("/elsewhere/lib.rs")),
 			PathBuf::from("/elsewhere/lib.rs")
 		);
 	}
 
 	#[test]
 	fn resolving_twice_is_stable() {
-		let a = resolved(&PartialConfig::default(), &PartialConfig::default());
-		let b = resolved(&PartialConfig::default(), &PartialConfig::default());
-		assert_eq!(a, b);
+		let first = resolved(&PartialConfig::default(), &PartialConfig::default());
+		let second = resolved(&PartialConfig::default(), &PartialConfig::default());
+		assert_eq!(first, second);
 	}
 }

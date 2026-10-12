@@ -4,7 +4,7 @@
 //!
 //! Paths are relative to the linted root.
 
-use std::io::Write;
+use std::io::{self, Write};
 
 use crate::model::Report;
 
@@ -13,8 +13,8 @@ use crate::model::Report;
 /// # Errors
 ///
 /// Propagates write failures from `out`.
-pub fn render(report: &Report, out: &mut impl Write) -> std::io::Result<()> {
-	serde_json::to_writer_pretty(&mut *out, report).map_err(std::io::Error::other)?;
+pub fn render(report: &Report, out: &mut impl Write) -> io::Result<()> {
+	serde_json::to_writer_pretty(&mut *out, report).map_err(io::Error::other)?;
 	writeln!(out)
 }
 
@@ -156,10 +156,10 @@ mod tests {
 	#[test]
 	fn render_twice_is_identical() {
 		let report = full();
-		let mut a = Vec::new();
-		let mut b = Vec::new();
-		render(&report, &mut a).expect("writing to a Vec cannot fail");
-		render(&report, &mut b).expect("writing to a Vec cannot fail");
-		assert_eq!(a, b);
+		let mut first = Vec::new();
+		let mut second = Vec::new();
+		render(&report, &mut first).expect("writing to a Vec cannot fail");
+		render(&report, &mut second).expect("writing to a Vec cannot fail");
+		assert_eq!(first, second);
 	}
 }

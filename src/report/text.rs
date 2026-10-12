@@ -2,7 +2,7 @@
 
 //! The human-readable report.
 
-use std::io::Write;
+use std::io::{self, Write};
 
 use super::{Paint, plural};
 use crate::config::{Config, Severity};
@@ -18,7 +18,7 @@ pub fn render(
 	config: &Config,
 	color: bool,
 	out: &mut impl Write,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
 	let paint = Paint::new(color);
 
 	if !report.has_errors() && !report.has_warnings() {
@@ -47,6 +47,7 @@ pub fn render(
 	Ok(())
 }
 
+/// Formats a section heading for `level`.
 fn heading(paint: &Paint, level: Severity, text: &str) -> String {
 	match level {
 		Severity::Error => format!("\n{} {text}", paint.red("Error:")),
@@ -55,7 +56,8 @@ fn heading(paint: &Paint, level: Severity, text: &str) -> String {
 	}
 }
 
-fn missing(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
+/// Writes the keys missing from some locales.
+fn missing(report: &Report, paint: &Paint, out: &mut impl Write) -> io::Result<()> {
 	if report.missing_keys.is_empty() {
 		return Ok(());
 	}
@@ -92,7 +94,8 @@ fn missing(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Res
 	Ok(())
 }
 
-fn inconsistent(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
+/// Writes the keys with inconsistent definitions.
+fn inconsistent(report: &Report, paint: &Paint, out: &mut impl Write) -> io::Result<()> {
 	if report.inconsistent_keys.is_empty() {
 		return Ok(());
 	}
@@ -122,7 +125,8 @@ fn inconsistent(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io
 	Ok(())
 }
 
-fn duplicates(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
+/// Writes the keys defined more than once.
+fn duplicates(report: &Report, paint: &Paint, out: &mut impl Write) -> io::Result<()> {
 	if report.duplicate_keys.is_empty() {
 		return Ok(());
 	}
@@ -155,7 +159,8 @@ fn duplicates(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::
 	writeln!(out)
 }
 
-fn parse_errors(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
+/// Writes the Fluent parse errors.
+fn parse_errors(report: &Report, paint: &Paint, out: &mut impl Write) -> io::Result<()> {
 	if report.parse_errors.is_empty() {
 		return Ok(());
 	}
@@ -179,7 +184,8 @@ fn parse_errors(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io
 	Ok(())
 }
 
-fn unused(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
+/// Writes the keys that are never used.
+fn unused(report: &Report, paint: &Paint, out: &mut impl Write) -> io::Result<()> {
 	if report.unused_keys.is_empty() {
 		return Ok(());
 	}
@@ -209,15 +215,16 @@ fn unused(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Resu
 	Ok(())
 }
 
-fn summary(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Result<()> {
-	let s = &report.summary;
+/// Writes the counts summary.
+fn summary(report: &Report, paint: &Paint, out: &mut impl Write) -> io::Result<()> {
+	let counts = &report.summary;
 
-	let locales = if s.locales.is_empty() {
+	let locales = if counts.locales.is_empty() {
 		"none".to_owned()
 	} else {
-		s.locales.join(", ")
+		counts.locales.join(", ")
 	};
-	let locale_count = s.locales.len();
+	let locale_count = counts.locales.len();
 	let locale_word = if locale_count == 1 {
 		"locale"
 	} else {
@@ -257,12 +264,13 @@ fn summary(report: &Report, paint: &Paint, out: &mut impl Write) -> std::io::Res
 
 	writeln!(out)?;
 	writeln!(out, "{}", paint.bold("Summary:"))?;
-	writeln!(out, "  {} used", plural(s.used, "key"))?;
-	writeln!(out, "  {} defined", plural(s.defined, "key"))?;
+	writeln!(out, "  {} used", plural(counts.used, "key"))?;
+	writeln!(out, "  {} defined", plural(counts.defined, "key"))?;
 
 	Ok(())
 }
 
+/// Adds a count label when `count` is not zero.
 fn push_count(into: &mut Vec<String>, count: usize, label: &str) {
 	if count > 0 {
 		into.push(if label.contains(' ') {
@@ -276,10 +284,10 @@ fn push_count(into: &mut Vec<String>, count: usize, label: &str) {
 #[cfg(test)]
 mod tests {
 	use std::collections::BTreeMap;
-	use std::path::PathBuf;
+	use std::path::{Path, PathBuf};
 
 	use super::*;
-	use crate::config::{ColorChoice, OutputFormat, PartialConfig, resolve};
+	use crate::config::{ColorChoice, Discovered, OutputFormat, PartialConfig, resolve};
 	use crate::model::{
 		DuplicateKey, InconsistentKey, KeyDefinition, KeyUsage, Location, MissingKey, ParseError,
 		Report, SCHEMA_VERSION, Summary, UnusedKey, UsageType,
@@ -289,8 +297,8 @@ mod tests {
 		resolve(
 			&PartialConfig::default(),
 			&PartialConfig::default(),
-			&crate::config::Discovered::default(),
-			std::path::Path::new("/repo"),
+			&Discovered::default(),
+			Path::new("/repo"),
 		)
 	}
 

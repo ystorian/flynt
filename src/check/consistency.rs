@@ -61,7 +61,7 @@ mod tests {
 			("en".to_owned(), locale("en", &["a", "b"])),
 			("fr".to_owned(), locale("fr", &["b", "a"])),
 		]);
-		assert!(inconsistent(&locales).is_empty());
+		assert_eq!(inconsistent(&locales), []);
 	}
 
 	#[test]
@@ -84,7 +84,7 @@ mod tests {
 			("fr".to_owned(), locale("fr", &["shared", "only-fr"])),
 		]);
 		let found = inconsistent(&locales);
-		let keys: Vec<&str> = found.iter().map(|f| f.key.as_str()).collect();
+		let keys: Vec<&str> = found.iter().map(|finding| finding.key.as_str()).collect();
 		assert_eq!(keys, vec!["only-en", "only-fr"]);
 	}
 
@@ -106,13 +106,16 @@ mod tests {
 			("en".to_owned(), locale("en", &["zebra", "apple", "mango"])),
 			("fr".to_owned(), locale("fr", &[])),
 		]);
-		let keys: Vec<String> = inconsistent(&locales).into_iter().map(|f| f.key).collect();
+		let keys: Vec<String> = inconsistent(&locales)
+			.into_iter()
+			.map(|finding| finding.key)
+			.collect();
 		assert_eq!(keys, vec!["apple", "mango", "zebra"]);
 	}
 
 	#[test]
 	fn single_locale_consistent() {
 		let locales = BTreeMap::from([("en".to_owned(), locale("en", &["a", "b"]))]);
-		assert!(inconsistent(&locales).is_empty());
+		assert_eq!(inconsistent(&locales), []);
 	}
 }

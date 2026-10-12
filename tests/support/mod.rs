@@ -2,11 +2,9 @@
 
 //! Shared helpers for the integration tests.
 
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::{fs, io};
 
 use flynt::config::{self, Config, PartialConfig};
@@ -32,9 +30,7 @@ pub fn fixture(name: &str) -> PathBuf {
 		.join(name);
 
 	// The lock is held for the copy.
-	let mut done = MATERIALIZED
-		.lock()
-		.unwrap_or_else(std::sync::PoisonError::into_inner);
+	let mut done = MATERIALIZED.lock().unwrap_or_else(PoisonError::into_inner);
 	if done.insert(name.to_owned()) {
 		let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 			.join("tests/fixtures")
@@ -44,9 +40,9 @@ pub fn fixture(name: &str) -> PathBuf {
 			"there is no {name:?} fixture at {}",
 			source.display()
 		);
-		materialize(&source, &target).unwrap_or_else(|e| {
+		materialize(&source, &target).unwrap_or_else(|error| {
 			panic!(
-				"cannot copy the {name:?} fixture to {}: {e}",
+				"cannot copy the {name:?} fixture to {}: {error}",
 				target.display()
 			)
 		});
@@ -63,6 +59,7 @@ fn materialize(source: &Path, target: &Path) -> io::Result<()> {
 	copy_tree(source, target)
 }
 
+/// Copies a directory tree, file by file.
 fn copy_tree(source: &Path, target: &Path) -> io::Result<()> {
 	fs::create_dir_all(target)?;
 	for entry in fs::read_dir(source)? {
@@ -92,7 +89,8 @@ pub fn config_with(name: &str, adjust: impl FnOnce(&mut PartialConfig)) -> Confi
 		..PartialConfig::default()
 	};
 	adjust(&mut cli);
-	config::load(&cli).unwrap_or_else(|e| panic!("cannot configure the {name:?} fixture: {e:#}"))
+	config::load(&cli)
+		.unwrap_or_else(|error| panic!("cannot configure the {name:?} fixture: {error:#}"))
 }
 
 /// Loads a fixture's configuration with only defaults.
@@ -103,13 +101,15 @@ pub fn config(name: &str) -> Config {
 /// Runs every check against a fixture.
 pub fn check(name: &str) -> Report {
 	let config = config(name);
-	flynt::check(&config).unwrap_or_else(|e| panic!("cannot check the {name:?} fixture: {e:#}"))
+	flynt::check(&config)
+		.unwrap_or_else(|error| panic!("cannot check the {name:?} fixture: {error:#}"))
 }
 
 /// Runs every check with an adjusted configuration.
 pub fn check_with(name: &str, adjust: impl FnOnce(&mut PartialConfig)) -> Report {
 	let config = config_with(name, adjust);
-	flynt::check(&config).unwrap_or_else(|e| panic!("cannot check the {name:?} fixture: {e:#}"))
+	flynt::check(&config)
+		.unwrap_or_else(|error| panic!("cannot check the {name:?} fixture: {error:#}"))
 }
 
 /// Asserts a report has no findings.

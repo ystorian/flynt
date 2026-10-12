@@ -4,6 +4,9 @@
 
 mod support;
 
+use flynt::PartialConfig;
+use flynt::config::load;
+
 use support::{assert_clean, check, check_with, config, fixture};
 
 #[test]
@@ -51,7 +54,11 @@ fn missing_key_reported() {
 fn four_byte_char_column() {
 	// Every file holds a 4-byte emoji.
 	let report = check("unicode");
-	let keys: Vec<&str> = report.missing_keys.iter().map(|k| k.key.as_str()).collect();
+	let keys: Vec<&str> = report
+		.missing_keys
+		.iter()
+		.map(|finding| finding.key.as_str())
+		.collect();
 	assert_eq!(keys, vec!["rust-key", "tpl-key"]);
 
 	let rust = &report.missing_keys[0].usages[0];
@@ -88,7 +95,7 @@ fn duplicate_key_reported_once() {
 	let files: Vec<String> = finding
 		.definitions
 		.iter()
-		.map(|d| d.at.file.display().to_string().replace('\\', "/"))
+		.map(|definition| definition.at.file.display().to_string().replace('\\', "/"))
 		.collect();
 	assert_eq!(files, vec!["locales/en/a.ftl", "locales/en/b.ftl"]);
 	assert_eq!(report.exit_code(), 1);
@@ -101,7 +108,7 @@ fn duplicate_lines_one_file() {
 	let lines: Vec<usize> = report.duplicate_keys[0]
 		.definitions
 		.iter()
-		.map(|d| d.at.line)
+		.map(|definition| definition.at.line)
 		.collect();
 	assert_eq!(lines, vec![1, 3]);
 }
@@ -109,7 +116,11 @@ fn duplicate_lines_one_file() {
 #[test]
 fn unused_key_warns_only() {
 	let report = check("unused");
-	let keys: Vec<&str> = report.unused_keys.iter().map(|k| k.key.as_str()).collect();
+	let keys: Vec<&str> = report
+		.unused_keys
+		.iter()
+		.map(|finding| finding.key.as_str())
+		.collect();
 	assert_eq!(keys, vec!["err-404", "never-used-key"]);
 	assert!(report.has_warnings());
 	assert!(!report.has_errors());
@@ -131,7 +142,7 @@ fn unused_keys_switch_off() {
 	let report = check_with("unused", |cli| {
 		cli.unused = Some(flynt::Severity::Allow);
 	});
-	assert!(report.unused_keys.is_empty());
+	assert_eq!(report.unused_keys, [] as [flynt::UnusedKey; 0]);
 	assert_eq!(report.exit_code(), 0);
 }
 
@@ -140,7 +151,11 @@ fn ignore_glob_silences_keys() {
 	let report = check_with("unused", |cli| {
 		cli.ignore_unused = Some(vec!["err-*".to_owned()]);
 	});
-	let keys: Vec<&str> = report.unused_keys.iter().map(|k| k.key.as_str()).collect();
+	let keys: Vec<&str> = report
+		.unused_keys
+		.iter()
+		.map(|finding| finding.key.as_str())
+		.collect();
 	assert_eq!(keys, vec!["never-used-key"]);
 }
 
@@ -230,12 +245,12 @@ fn config_file_reads_root() {
 
 #[test]
 fn cli_overrides_config_file() {
-	let cli = flynt::PartialConfig {
+	let cli = PartialConfig {
 		root: Some(fixture("config_file")),
 		locales_dir: Some("locales".into()),
-		..flynt::PartialConfig::default()
+		..PartialConfig::default()
 	};
-	let config = flynt::config::load(&cli).expect("the configuration loads");
+	let config = load(&cli).expect("the configuration loads");
 	// The flag overrides the file's value.
 	let error = flynt::check(&config).expect_err("the CLI value must win");
 	assert!(format!("{error:#}").contains("locales directory does not exist"));
@@ -243,12 +258,12 @@ fn cli_overrides_config_file() {
 
 #[test]
 fn config_file_is_ignorable() {
-	let cli = flynt::PartialConfig {
+	let cli = PartialConfig {
 		root: Some(fixture("config_file")),
 		no_config: Some(true),
-		..flynt::PartialConfig::default()
+		..PartialConfig::default()
 	};
-	let config = flynt::config::load(&cli).expect("the configuration loads");
+	let config = load(&cli).expect("the configuration loads");
 	assert!(config.locales_dir.ends_with("locales"), "{config:?}");
 	assert_eq!(config.filters, vec!["t".to_owned(), "tn".to_owned()]);
 }

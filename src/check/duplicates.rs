@@ -26,7 +26,7 @@ pub fn duplicates(locales: &BTreeMap<String, LocaleKeys>) -> Vec<DuplicateKey> {
 		}
 	}
 
-	findings.sort_by(|a, b| (&a.key, &a.locale).cmp(&(&b.key, &b.locale)));
+	findings.sort_by(|left, right| (&left.key, &left.locale).cmp(&(&right.key, &right.locale)));
 	findings
 }
 
@@ -38,7 +38,7 @@ mod tests {
 	#[test]
 	fn key_defined_once() {
 		let locales = BTreeMap::from([("en".to_owned(), locale("en", &["a", "b"]))]);
-		assert!(duplicates(&locales).is_empty());
+		assert_eq!(duplicates(&locales), []);
 	}
 
 	#[test]
@@ -61,7 +61,11 @@ mod tests {
 			locale_with("en", &[("dup", &[("a.ftl", 1), ("a.ftl", 7)])]),
 		)]);
 		let found = duplicates(&locales);
-		let lines: Vec<usize> = found[0].definitions.iter().map(|d| d.at.line).collect();
+		let lines: Vec<usize> = found[0]
+			.definitions
+			.iter()
+			.map(|definition| definition.at.line)
+			.collect();
 		assert_eq!(lines, vec![1, 7]);
 	}
 
@@ -104,7 +108,7 @@ mod tests {
 		let found = duplicates(&locales);
 		let pairs: Vec<(&str, &str)> = found
 			.iter()
-			.map(|f| (f.key.as_str(), f.locale.as_str()))
+			.map(|finding| (finding.key.as_str(), finding.locale.as_str()))
 			.collect();
 		assert_eq!(
 			pairs,

@@ -2,15 +2,17 @@
 
 //! Shared file walking and byte-offset-to-line mapping.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use walkdir::WalkDir;
 
 use crate::config::Config;
 
 /// Maps byte offsets to line and column.
 pub struct LineIndex<'a> {
+	/// Text to index.
 	content: &'a str,
 	/// Byte offset of each line's start.
 	starts: Vec<usize>,
@@ -23,7 +25,7 @@ impl<'a> LineIndex<'a> {
 		starts.extend(
 			content
 				.char_indices()
-				.filter(|(_, c)| *c == '\n')
+				.filter(|(_, character)| *character == '\n')
 				.map(|(i, _)| i + 1),
 		);
 		Self { content, starts }
@@ -40,7 +42,11 @@ impl<'a> LineIndex<'a> {
 		let line = self.line_of(offset);
 		let start = self.starts[line - 1];
 		let offset = offset.min(self.content.len());
-		let column = self.content[start..offset].chars().count() + 1;
+		let column = self
+			.content
+			.get(start..offset)
+			.map_or(0, |text| text.chars().count())
+			+ 1;
 		(line, column)
 	}
 
@@ -49,14 +55,19 @@ impl<'a> LineIndex<'a> {
 		let line = self.line_of(offset);
 		let start = self.starts[line - 1];
 		let end = self.starts.get(line).copied().unwrap_or(self.content.len());
-		self.content[start..end].trim_start().starts_with("//")
+		self.content
+			.get(start..end)
+			.is_some_and(|text| text.trim_start().starts_with("//"))
 	}
 }
 
 /// Walks directories, skipping hidden and excluded paths.
 pub struct Walker {
+	/// Root for relative exclude matches.
 	root: PathBuf,
+	/// Compiled exclude globs.
 	exclude: Vec<glob::Pattern>,
+	/// Whether to follow symbolic links.
 	follow_links: bool,
 }
 
@@ -70,9 +81,9 @@ impl Walker {
 		let exclude = config
 			.exclude
 			.iter()
-			.map(|p| {
-				glob::Pattern::new(p)
-					.with_context(|| format!("--exclude {p:?} is not a valid glob"))
+			.map(|entry| {
+				glob::Pattern::new(entry)
+					.with_context(|| format!("--exclude {entry:?} is not a valid glob"))
 			})
 			.collect::<Result<Vec<_>>>()?;
 		Ok(Self {
@@ -97,7 +108,7 @@ impl Walker {
 			.follow_links(self.follow_links)
 			.sort_by_file_name()
 			.into_iter()
-			.filter_entry(|e| !self.is_skipped(e.path(), e.depth()));
+			.filter_entry(|item| !self.is_skipped(item.path(), item.depth()));
 
 		for entry in walk {
 			let entry =
@@ -124,7 +135,9 @@ impl Walker {
 		}
 
 		let relative = path.strip_prefix(&self.root).unwrap_or(path);
-		self.exclude.iter().any(|p| p.matches_path(relative))
+		self.exclude
+			.iter()
+			.any(|pattern| pattern.matches_path(relative))
 	}
 }
 
@@ -135,8 +148,7 @@ impl Walker {
 /// - File cannot be read.
 /// - File is not UTF-8.
 pub fn read(path: &Path) -> Result<String> {
-	std::fs::read_to_string(path)
-		.with_context(|| format!("cannot read the file: {}", path.display()))
+	fs::read_to_string(path).with_context(|| format!("cannot read the file: {}", path.display()))
 }
 
 #[cfg(test)]
