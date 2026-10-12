@@ -3,31 +3,40 @@
 //! Discovers crate layout from Cargo.toml.
 
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use serde::Deserialize;
 
 /// Askama template directory name.
 const TEMPLATE_DIR: &str = "templates";
 
+/// The parts of Cargo.toml that flynt reads.
 #[derive(Debug, Deserialize)]
 struct Manifest {
+	/// The `[workspace]` table.
 	workspace: Option<Workspace>,
+	/// The `[package]` table.
 	package: Option<Package>,
 }
 
+/// The `[workspace]` table.
 #[derive(Debug, Default, Deserialize)]
 struct Workspace {
+	/// Member globs.
 	#[serde(default)]
 	members: Vec<String>,
+	/// Excluded paths or globs.
 	#[serde(default)]
 	exclude: Vec<String>,
 }
 
+/// The `[package]` table.
 #[derive(Debug, Deserialize)]
 struct Package {
-	#[allow(dead_code)]
+	/// The package name.
+	#[expect(dead_code, reason = "Only the table presence matters.")]
 	name: Option<String>,
 }
 
@@ -40,7 +49,7 @@ struct Package {
 /// - Fails if no package or workspace exists.
 ///
 pub fn members(root: &Path, manifest_path: &Path) -> Result<Vec<PathBuf>> {
-	let text = std::fs::read_to_string(manifest_path).with_context(|| {
+	let text = fs::read_to_string(manifest_path).with_context(|| {
 		format!(
 			"cannot read the manifest: {}. Pass --manifest-path.",
 			manifest_path.display()
@@ -92,11 +101,12 @@ pub fn template_dirs(members: &[PathBuf]) -> Vec<PathBuf> {
 	subdirs(members, TEMPLATE_DIR)
 }
 
+/// Existing `name` subdirectories of the members.
 fn subdirs(members: &[PathBuf], name: &str) -> Vec<PathBuf> {
 	members
 		.iter()
-		.map(|m| m.join(name))
-		.filter(|p| p.is_dir())
+		.map(|member| member.join(name))
+		.filter(|path| path.is_dir())
 		.collect::<BTreeSet<_>>()
 		.into_iter()
 		.collect()
@@ -112,7 +122,7 @@ pub fn discover_locales(locales_dir: &Path) -> Result<Vec<String>> {
 		return Ok(Vec::new());
 	}
 
-	let entries = std::fs::read_dir(locales_dir).with_context(|| {
+	let entries = fs::read_dir(locales_dir).with_context(|| {
 		format!(
 			"cannot read the locales directory: {}",
 			locales_dir.display()
@@ -180,10 +190,10 @@ fn expand(root: &Path, pattern: &str, manifest_path: &Path) -> Result<Vec<PathBu
 /// Compiles the `workspace.exclude` entries into globs.
 fn patterns(raw: &[String], manifest_path: &Path) -> Result<Vec<glob::Pattern>> {
 	raw.iter()
-		.map(|p| {
-			glob::Pattern::new(p).with_context(|| {
+		.map(|pattern| {
+			glob::Pattern::new(pattern).with_context(|| {
 				format!(
-					"exclude pattern {p:?} in {} is not a valid glob",
+					"exclude pattern {pattern:?} in {} is not a valid glob",
 					manifest_path.display()
 				)
 			})
@@ -196,23 +206,28 @@ fn is_excluded(root: &Path, member: &Path, compiled: &[glob::Pattern], raw: &[St
 	let Ok(relative) = member.strip_prefix(root) else {
 		return false;
 	};
-	compiled.iter().any(|p| p.matches_path(relative))
-		|| raw.iter().any(|r| relative.starts_with(Path::new(r)))
+	compiled
+		.iter()
+		.any(|pattern| pattern.matches_path(relative))
+		|| raw
+			.iter()
+			.any(|entry| relative.starts_with(Path::new(entry)))
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::{env, process};
 
 	/// Builds a throwaway tree and returns its root.
 	fn scratch(name: &str, files: &[(&str, &str)]) -> PathBuf {
-		let root = std::env::temp_dir().join(format!("flynt-{}-{name}", std::process::id()));
-		let _ = std::fs::remove_dir_all(&root);
+		let root = env::temp_dir().join(format!("flynt-{}-{name}", process::id()));
+		let _ = fs::remove_dir_all(&root);
 		for (path, contents) in files {
 			let full = root.join(path);
-			std::fs::create_dir_all(full.parent().expect("a file has a parent"))
+			fs::create_dir_all(full.parent().expect("a file has a parent"))
 				.expect("cannot create the scratch directory");
-			std::fs::write(&full, contents).expect("cannot write the scratch file");
+			fs::write(&full, contents).expect("cannot write the scratch file");
 		}
 		root
 	}
@@ -221,7 +236,7 @@ mod tests {
 	fn names(root: &Path, found: &[PathBuf]) -> Vec<String> {
 		found
 			.iter()
-			.map(|p| match p.strip_prefix(root) {
+			.map(|path| match path.strip_prefix(root) {
 				Ok(relative) => {
 					let text = relative.to_string_lossy().replace('\\', "/");
 					if text.is_empty() {
@@ -420,6 +435,6 @@ mod tests {
 		let root = scratch("no-locales", &[("Cargo.toml", "[package]\nname = \"x\"\n")]);
 		let found = discover_locales(&root.join("locales"))
 			.expect("a missing directory is not an error here");
-		assert!(found.is_empty());
+		assert_eq!(found, Vec::<String>::new());
 	}
 }

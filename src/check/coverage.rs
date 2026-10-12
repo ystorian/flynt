@@ -51,7 +51,7 @@ mod tests {
 			("en".to_owned(), locale("en", &["a", "b"])),
 			("fr".to_owned(), locale("fr", &["a", "b"])),
 		]);
-		assert!(missing(&[usage("a"), usage("b")], &locales).is_empty());
+		assert_eq!(missing(&[usage("a"), usage("b")], &locales), []);
 	}
 
 	#[test]
@@ -92,12 +92,12 @@ mod tests {
 	fn findings_sorted_by_key() {
 		let locales = BTreeMap::from([("en".to_owned(), locale("en", &[]))]);
 		let found = missing(&[usage("zebra"), usage("apple"), usage("mango")], &locales);
-		let keys: Vec<&str> = found.iter().map(|f| f.key.as_str()).collect();
+		let keys: Vec<&str> = found.iter().map(|finding| finding.key.as_str()).collect();
 		assert_eq!(keys, vec!["apple", "mango", "zebra"]);
 	}
 
 	#[test]
 	fn no_locales_no_missing() {
-		assert!(missing(&[usage("a")], &BTreeMap::new()).is_empty());
+		assert_eq!(missing(&[usage("a")], &BTreeMap::new()), []);
 	}
 }

@@ -2,8 +2,10 @@
 
 //! Process-level checks: exit codes and formats.
 
+#[expect(dead_code, reason = "This test uses only some helpers.")]
 mod support;
 
+use std::env;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -163,7 +165,7 @@ fn result_ignores_cwd() {
 
 	let from_manifest = run_in(manifest, &[absolute]);
 	let from_fixture = run_in(&fixture_path, &[absolute]);
-	let from_temp = run_in(&std::env::temp_dir(), &[absolute]);
+	let from_temp = run_in(&env::temp_dir(), &[absolute]);
 
 	assert_eq!(stdout(&from_manifest), stdout(&from_fixture));
 	assert_eq!(stdout(&from_manifest), stdout(&from_temp));

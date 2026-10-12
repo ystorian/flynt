@@ -6,7 +6,9 @@ pub mod rust;
 pub mod scan;
 pub mod templates;
 
-use anyhow::{Context, Result};
+use std::cmp::Reverse;
+
+use anyhow::{Context as _, Result};
 use regex::Regex;
 
 use crate::model::KeyUsage;
@@ -34,7 +36,7 @@ fn alternation(names: &[String]) -> Option<String> {
 		return None;
 	}
 	let mut sorted: Vec<&String> = names.iter().collect();
-	sorted.sort_by_key(|n| (std::cmp::Reverse(n.len()), (*n).clone()));
+	sorted.sort_by_key(|n| (Reverse(n.len()), (*n).clone()));
 	Some(
 		sorted
 			.iter()
@@ -55,7 +57,7 @@ mod tests {
 	use super::*;
 
 	fn names(values: &[&str]) -> Vec<String> {
-		values.iter().map(|v| (*v).to_owned()).collect()
+		values.iter().map(|value| (*value).to_owned()).collect()
 	}
 
 	#[test]

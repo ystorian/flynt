@@ -2,10 +2,11 @@
 
 //! Key usages, definitions, findings, and report.
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Display, Formatter};
+use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::config::Severity;
 
@@ -22,17 +23,17 @@ pub struct Location {
 }
 
 /// Serializes a path with forward slashes for the JSON report.
-fn serialize_path<S: serde::Serializer>(path: &std::path::Path, out: S) -> Result<S::Ok, S::Error> {
+fn serialize_path<S: Serializer>(path: &Path, out: S) -> Result<S::Ok, S::Error> {
 	let text = path.to_string_lossy();
-	if std::path::MAIN_SEPARATOR == '/' {
+	if MAIN_SEPARATOR == '/' {
 		out.serialize_str(&text)
 	} else {
-		out.serialize_str(&text.replace(std::path::MAIN_SEPARATOR, "/"))
+		out.serialize_str(&text.replace(MAIN_SEPARATOR, "/"))
 	}
 }
 
-impl std::fmt::Display for Location {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for Location {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		write!(f, "{}:{}:{}", self.file.display(), self.line, self.column)
 	}
 }
@@ -84,7 +85,7 @@ pub struct LocaleKeys {
 	/// Keys with every definition found.
 	pub keys: BTreeMap<String, Vec<KeyDefinition>>,
 	/// Keys that are Fluent terms.
-	pub terms: std::collections::BTreeSet<String>,
+	pub terms: BTreeSet<String>,
 }
 
 /// A key missing from some locales.
@@ -258,10 +259,10 @@ mod tests {
 
 	#[test]
 	fn clean_report_exits_zero() {
-		let r = report(Severity::Warn, 0);
-		assert!(!r.has_errors());
-		assert!(!r.has_warnings());
-		assert_eq!(r.exit_code(), 0);
+		let clean = report(Severity::Warn, 0);
+		assert!(!clean.has_errors());
+		assert!(!clean.has_warnings());
+		assert_eq!(clean.exit_code(), 0);
 	}
 
 	#[test]

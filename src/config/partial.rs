@@ -10,113 +10,112 @@ use serde::Deserialize;
 use super::{ColorChoice, OutputFormat, Severity};
 
 /// A partially specified configuration.
-#[allow(clippy::doc_markdown)]
 #[derive(Debug, Default, Clone, PartialEq, Eq, Parser, Deserialize)]
 #[command(
 	name = "flynt",
 	version,
 	about = "Fluent keys linter for Askama templates",
-	after_help = "Defaults come from the repository, can be overriden in .flynt.toml."
+	after_help = "Defaults come from the repository, can be overridden in .flynt.toml."
 )]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct PartialConfig {
 	// ---- CLI only ----
-	/// Directory to lint [default: the current directory]
+	/// Directory to lint [default: the current directory].
 	#[arg(value_name = "PATH")]
 	#[serde(skip)]
 	pub root: Option<PathBuf>,
 
-	/// Read this configuration file instead of `<PATH>/.flynt.toml`
+	/// Read this configuration file instead of `<PATH>/.flynt.toml`.
 	#[arg(long, value_name = "FILE")]
 	#[serde(skip)]
 	pub config: Option<PathBuf>,
 
-	/// Ignore `.flynt.toml` entirely
+	/// Ignore `.flynt.toml` entirely.
 	#[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
 	#[serde(skip)]
 	pub no_config: Option<bool>,
 
-	// ---- anchors ----
-	/// Path to the root Cargo.toml [default: <PATH>/Cargo.toml]
+	// ---- Anchors ----
+	/// Path to the root Cargo.toml [default: <PATH>/Cargo.toml].
 	#[arg(long, value_name = "FILE")]
 	pub manifest_path: Option<PathBuf>,
 
-	// ---- locales ----
-	/// Directory holding locales [default: locales]
+	// ---- Locales ----
+	/// Directory holding locales [default: locales].
 	#[arg(long, value_name = "DIR")]
 	pub locales_dir: Option<PathBuf>,
 
-	/// Locale to check; repeatable [default: every locale]
+	/// Locale to check; repeatable [default: every locale].
 	#[arg(long, value_name = "LOCALE")]
 	pub locales: Option<Vec<String>>,
 
-	/// Reference locale for the unused-key check [default: en]
+	/// Reference locale for the unused-key check [default: en].
 	#[arg(long, value_name = "LOCALE")]
 	pub reference_locale: Option<String>,
 
-	// ---- sources ----
-	/// Rust source directories to scan (replaces defaults)
+	// ---- Sources ----
+	/// Rust source directories to scan (replaces defaults).
 	#[arg(long = "src", value_name = "DIR")]
 	pub src: Option<Vec<PathBuf>>,
 
-	/// Extra Rust source directory (adds to defaults)
+	/// Extra Rust source directory (adds to defaults).
 	#[arg(long, value_name = "DIR")]
 	pub add_src: Option<Vec<PathBuf>>,
 
-	// ---- templates ----
-	/// Template directories to scan (replaces defaults)
+	// ---- Templates ----
+	/// Template directories to scan (replaces defaults).
 	#[arg(long = "templates", value_name = "DIR")]
 	pub templates: Option<Vec<PathBuf>>,
 
-	/// Extra template directory (adds to defaults)
+	/// Extra template directory (adds to defaults).
 	#[arg(long, value_name = "DIR")]
 	pub add_templates: Option<Vec<PathBuf>>,
 
-	/// Template file extension; repeatable [default: html]
+	/// Template file extension; repeatable [default: html].
 	#[arg(long = "template-ext", value_name = "EXT")]
 	pub template_ext: Option<Vec<String>>,
 
-	// ---- helper names ----
-	/// Askama filter taking a key [default: t, tn]
+	// ---- Helper names ----
+	/// Askama filter taking a key [default: `t, tn`].
 	#[arg(long, value_name = "NAME")]
 	pub filters: Option<Vec<String>>,
 
-	/// Rust function taking a key [default: loc, loc_with_args]
+	/// Rust function taking a key [default: `loc, loc_with_args`].
 	#[arg(long, value_name = "NAME")]
 	pub functions: Option<Vec<String>>,
 
-	// ---- checks ----
-	/// Severity for unused keys [default: warn]
+	// ---- Checks ----
+	/// Severity for unused keys [default: warn].
 	#[arg(long, value_enum, value_name = "LEVEL")]
 	pub unused: Option<Severity>,
 
-	/// Key-name glob never reported as unused; repeatable
+	/// Key-name glob never reported as unused; repeatable.
 	#[arg(long, value_name = "GLOB")]
 	pub ignore_unused: Option<Vec<String>>,
 
-	/// Treat `key.attribute` as defined [default: true]
+	/// Treat `key.attribute` as defined [default: true].
 	#[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
 	pub attributes: Option<bool>,
 
 	// ---- walking ----
-	/// Path glob to skip [default: target/**]
+	/// Path glob to skip [default: target/**].
 	#[arg(long, value_name = "GLOB")]
 	pub exclude: Option<Vec<String>>,
 
-	/// Follow symbolic links [default: true]
+	/// Follow symbolic links [default: true].
 	#[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
 	pub follow_links: Option<bool>,
 
 	// ---- output ----
-	/// Output format [default: text]
+	/// Output format [default: text].
 	#[arg(long, value_enum, value_name = "FORMAT")]
 	pub format: Option<OutputFormat>,
 
-	/// Coloring [default: auto]
+	/// Coloring [default: auto].
 	#[arg(long, value_enum, value_name = "WHEN")]
 	pub color: Option<ColorChoice>,
 
-	/// Silence is a virtue
+	/// Silence is a virtue.
 	#[arg(long, short = 'q', num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
 	pub quiet: Option<bool>,
 }
@@ -207,7 +206,7 @@ mod tests {
 
 	#[test]
 	fn cli_definition_is_consistent() {
-		use clap::CommandFactory;
+		use clap::CommandFactory as _;
 		PartialConfig::command().debug_assert();
 	}
 }

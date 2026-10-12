@@ -5,7 +5,8 @@
 pub mod json;
 pub mod text;
 
-use std::io::Write;
+use std::env;
+use std::io::{self, Write};
 
 use crate::config::{ColorChoice, Config, OutputFormat};
 use crate::model::Report;
@@ -20,7 +21,7 @@ pub fn render(
 	config: &Config,
 	color: bool,
 	out: &mut impl Write,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
 	match config.format {
 		OutputFormat::Text => text::render(report, config, color, out),
 		OutputFormat::Json => json::render(report, out),
@@ -35,20 +36,23 @@ pub fn color_enabled(choice: ColorChoice, is_terminal: bool) -> bool {
 	match choice {
 		ColorChoice::Always => true,
 		ColorChoice::Never => false,
-		ColorChoice::Auto => is_terminal && std::env::var_os("NO_COLOR").is_none(),
+		ColorChoice::Auto => is_terminal && env::var_os("NO_COLOR").is_none(),
 	}
 }
 
 /// ANSI escapes, switched off in one place.
 pub(crate) struct Paint {
+	/// Emits escapes when true.
 	on: bool,
 }
 
 impl Paint {
+	/// Creates a painter, on or off.
 	pub(crate) fn new(on: bool) -> Self {
 		Self { on }
 	}
 
+	/// Wraps `text` in the escape `code`.
 	fn wrap(&self, code: &str, text: &str) -> String {
 		if self.on {
 			format!("\x1b[{code}m{text}\x1b[0m")
@@ -57,22 +61,27 @@ impl Paint {
 		}
 	}
 
+	/// Paints `text` red.
 	pub(crate) fn red(&self, text: &str) -> String {
 		self.wrap("31", text)
 	}
 
+	/// Paints `text` green.
 	pub(crate) fn green(&self, text: &str) -> String {
 		self.wrap("32", text)
 	}
 
+	/// Paints `text` yellow.
 	pub(crate) fn yellow(&self, text: &str) -> String {
 		self.wrap("33", text)
 	}
 
+	/// Makes `text` bold.
 	pub(crate) fn bold(&self, text: &str) -> String {
 		self.wrap("1", text)
 	}
 
+	/// Makes `text` dim.
 	pub(crate) fn dim(&self, text: &str) -> String {
 		self.wrap("2", text)
 	}

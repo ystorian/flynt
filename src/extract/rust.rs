@@ -40,7 +40,7 @@ pub fn keys(config: &Config, walker: &Walker) -> Result<Found> {
 
 /// Whether a path is a Rust file.
 fn is_rust(path: &Path) -> bool {
-	path.extension().and_then(|e| e.to_str()) == Some("rs")
+	path.extension().and_then(|extension| extension.to_str()) == Some("rs")
 }
 
 /// Builds the call pattern from function names.
@@ -85,7 +85,7 @@ mod tests {
 	use super::*;
 
 	fn names(values: &[&str]) -> Vec<String> {
-		values.iter().map(|v| (*v).to_owned()).collect()
+		values.iter().map(|value| (*value).to_owned()).collect()
 	}
 
 	fn extract(content: &str, functions: &[&str]) -> Vec<KeyUsage> {
@@ -98,7 +98,7 @@ mod tests {
 	fn keys_of(content: &str) -> Vec<String> {
 		extract(content, &["loc", "loc_with_args"])
 			.into_iter()
-			.map(|u| u.key)
+			.map(|usage| usage.key)
 			.collect()
 	}
 
@@ -153,7 +153,7 @@ mod tests {
 		let content = r#"translate("mine", &lang); loc("theirs", &lang);"#;
 		let keys: Vec<String> = extract(content, &["translate"])
 			.into_iter()
-			.map(|u| u.key)
+			.map(|usage| usage.key)
 			.collect();
 		assert_eq!(keys, vec!["mine"]);
 	}
@@ -187,7 +187,7 @@ mod tests {
 
 	#[test]
 	fn empty_key_rejected() {
-		assert!(keys_of(r#"loc("", &lang);"#).is_empty());
+		assert_eq!(keys_of(r#"loc("", &lang);"#), Vec::<String>::new());
 	}
 
 	#[test]

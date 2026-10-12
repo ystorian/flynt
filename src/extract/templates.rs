@@ -26,7 +26,7 @@ pub fn keys(config: &Config, walker: &Walker) -> Result<Found> {
 
 	let mut found = Found::default();
 	for dir in &config.templates {
-		for path in walker.files(dir, |p| is_template(p, config))? {
+		for path in walker.files(dir, |file| is_template(file, config))? {
 			let content = super::scan::read(&path)?;
 			let relative = config.relative(&path);
 			found.usages.extend(keys_in(&pattern, &content, &relative));
@@ -41,8 +41,8 @@ pub fn keys(config: &Config, walker: &Walker) -> Result<Found> {
 /// Whether a path has a template extension.
 fn is_template(path: &Path, config: &Config) -> bool {
 	path.extension()
-		.and_then(|e| e.to_str())
-		.is_some_and(|e| config.is_template_ext(e))
+		.and_then(|extension| extension.to_str())
+		.is_some_and(|extension| config.is_template_ext(extension))
 }
 
 /// Builds the filter pattern from filter names.
@@ -84,7 +84,7 @@ mod tests {
 	use super::*;
 
 	fn names(values: &[&str]) -> Vec<String> {
-		values.iter().map(|v| (*v).to_owned()).collect()
+		values.iter().map(|value| (*value).to_owned()).collect()
 	}
 
 	fn extract(content: &str, filters: &[&str]) -> Vec<KeyUsage> {
@@ -97,7 +97,7 @@ mod tests {
 	fn keys_of(content: &str) -> Vec<String> {
 		extract(content, &["t", "tn"])
 			.into_iter()
-			.map(|u| u.key)
+			.map(|usage| usage.key)
 			.collect()
 	}
 
@@ -142,7 +142,7 @@ mod tests {
 	#[test]
 	fn plain_string_not_key() {
 		let content = r#"<a href="/home" class="button">{{ title }}</a>"#;
-		assert!(keys_of(content).is_empty());
+		assert_eq!(keys_of(content), Vec::<String>::new());
 	}
 
 	#[test]
@@ -150,7 +150,7 @@ mod tests {
 		let content = r#"{{ "mine" | x(&lang) }} {{ "theirs" | t(&lang) }}"#;
 		let keys: Vec<String> = extract(content, &["x"])
 			.into_iter()
-			.map(|u| u.key)
+			.map(|usage| usage.key)
 			.collect();
 		assert_eq!(keys, vec!["mine"]);
 	}

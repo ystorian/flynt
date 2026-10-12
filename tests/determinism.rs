@@ -2,19 +2,22 @@
 
 //! Two runs must produce identical bytes.
 
+#[expect(dead_code, reason = "This test uses only some helpers.")]
 mod support;
 
 use flynt::config::OutputFormat;
+use flynt::report;
 use support::config;
 
 /// Renders a fixture's report as JSON.
 fn json(name: &str) -> String {
 	let mut config = config(name);
 	config.format = OutputFormat::Json;
-	let report = flynt::check(&config).unwrap_or_else(|e| panic!("cannot check {name:?}: {e:#}"));
+	let report =
+		flynt::check(&config).unwrap_or_else(|error| panic!("cannot check {name:?}: {error:#}"));
 
 	let mut out = Vec::new();
-	flynt::report::render(&report, &config, false, &mut out).expect("writing to a Vec cannot fail");
+	report::render(&report, &config, false, &mut out).expect("writing to a Vec cannot fail");
 	String::from_utf8(out).expect("the output is UTF-8")
 }
 
@@ -62,7 +65,11 @@ fn finding_lists_are_sorted() {
 	let config = config("unicode");
 	let report = flynt::check(&config).expect("the fixture checks");
 
-	let keys: Vec<&str> = report.missing_keys.iter().map(|k| k.key.as_str()).collect();
+	let keys: Vec<&str> = report
+		.missing_keys
+		.iter()
+		.map(|finding| finding.key.as_str())
+		.collect();
 	let mut sorted = keys.clone();
 	sorted.sort_unstable();
 	assert_eq!(keys, sorted, "missing keys are not sorted");

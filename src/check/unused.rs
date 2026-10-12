@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 
 use crate::model::{LocaleKeys, UnusedKey};
 
@@ -20,9 +20,9 @@ pub fn unused(
 ) -> Result<Vec<UnusedKey>> {
 	let ignored = ignore
 		.iter()
-		.map(|p| {
-			glob::Pattern::new(p)
-				.with_context(|| format!("--ignore-unused {p:?} is not a valid glob"))
+		.map(|glob| {
+			glob::Pattern::new(glob)
+				.with_context(|| format!("--ignore-unused {glob:?} is not a valid glob"))
 		})
 		.collect::<Result<Vec<_>>>()?;
 
@@ -31,7 +31,7 @@ pub fn unused(
 		if used.contains(key) || reference.terms.contains(key) {
 			continue;
 		}
-		if ignored.iter().any(|p| p.matches(key)) {
+		if ignored.iter().any(|pattern| pattern.matches(key)) {
 			continue;
 		}
 		// Report the first definition.
@@ -45,7 +45,7 @@ pub fn unused(
 		});
 	}
 
-	findings.sort_by(|a, b| a.key.cmp(&b.key));
+	findings.sort_by(|left, right| left.key.cmp(&right.key));
 	Ok(findings)
 }
 
@@ -55,18 +55,18 @@ mod tests {
 	use crate::check::tests::{locale, locale_with_terms};
 
 	fn used(keys: &[&str]) -> BTreeSet<String> {
-		keys.iter().map(|k| (*k).to_owned()).collect()
+		keys.iter().map(|key| (*key).to_owned()).collect()
 	}
 
 	fn keys_of(found: &[UnusedKey]) -> Vec<&str> {
-		found.iter().map(|f| f.key.as_str()).collect()
+		found.iter().map(|finding| finding.key.as_str()).collect()
 	}
 
 	#[test]
 	fn used_key_unreported() {
 		let reference = locale("en", &["a", "b"]);
 		let found = unused(&reference, &used(&["a", "b"]), &[]).expect("no globs to compile");
-		assert!(found.is_empty());
+		assert_eq!(found, []);
 	}
 
 	#[test]
@@ -83,7 +83,7 @@ mod tests {
 		// Only `.ftl` files reference a term.
 		let reference = locale_with_terms("en", &["a", "-brand"], &["-brand"]);
 		let found = unused(&reference, &used(&["a"]), &[]).expect("no globs to compile");
-		assert!(found.is_empty());
+		assert_eq!(found, []);
 	}
 
 	#[test]
