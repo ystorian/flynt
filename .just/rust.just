@@ -8,7 +8,7 @@ version := trim(replace(`tomli query --filepath Cargo.toml workspace.package.ver
 tag := 'v' + version
 
 # Display "in quiet mode" for non-release profiles.
-display_profile(profile) := if profile != 'release' { info(['Profile:', YELLOW + BOLD + profile, 'in quiet mode']) + set_title('🦀 ' + recipe_name()) + NORMAL } else { set_title('🦀 ' + recipe_name()) + NORMAL }
+display_profile(profile) := if profile != 'release' { echo(info(['Profile:', BOLD + profile, 'in quiet mode'])) + ';' + set_title('🦀 ' + recipe_name()) } else { set_title('🦀 ' + recipe_name()) }
 
 # Clippy deny list for `strict` mode.
 clippy_deny_list := ['doc_paragraphs_missing_punctuation', 'min_ident_chars', 'missing_docs_in_private_items', 'redundant_test_prefix']
@@ -22,11 +22,12 @@ clippy_allow_list := ['arbitrary_source_item_ordering', 'assertions_on_result_st
 # Check the Visual Studio build tools environment variables
 [no-exit-message]
 [private]
+[script]
 [windows]
 check_env:
-	if ! [ -z "$(printenv VCINSTALLDIR)" ]; then \
-		echo "{{ error(['The environment variable', BOLD + 'VCINSTALLDIR', 'is set']) }}"; \
-		exit 1; \
+	if ! [ -z "$(printenv VCINSTALLDIR)" ]; then
+		echo {{ error(['The environment variable', BOLD + 'VCINSTALLDIR', 'is set']) }};
+		exit 1;
 	fi
 
 # Check the Visual Studio build tools environment variables
@@ -39,23 +40,23 @@ check_env:
 [group('Rust')]
 bench profile='dev': check_env
 	echo {{ CYAN }}Run {{ BOLD }}cargo bench{{ NORMAL }}
-	echo "{{ display_profile(profile) }}"
+	{{ display_profile(profile) }}
 
 	cargo bench --all-features --workspace \
 		{{ if profile != 'release' { '--profile ' + profile + ' --quiet' } }}
 
-	echo "{{ set_title('') + done(profile) }}"
+	echo {{ done([profile, reset_title]) }}
 
 # Check for errors
 [group('Rust')]
 check profile='dev': check_env
 	echo {{ CYAN }}Run {{ BOLD }}cargo check{{ NORMAL }}
-	echo "{{ display_profile(profile) }}"
+	{{ display_profile(profile) }}
 
 	cargo check --workspace --all-features --future-incompat-report \
 		{{ if profile != 'release' { '--profile ' + profile + ' --quiet' } else { '--release' } }}
 
-	echo "{{ set_title('') + done(profile) }}"
+	echo {{ done([profile, reset_title]) }}
 
 # Check dependencies and licenses
 [group('Rust')]
@@ -90,9 +91,10 @@ alias fmt := format
 [group('Rust')]
 [no-exit-message]
 clippy links strict dupes fix profile='dev': check_env
-	echo "{{ CYAN }}Run {{ BOLD }}cargo clippy{{ set_title('🦀 ' + recipe_name()) + NORMAL }}"
+	echo {{ CYAN }}Run {{ BOLD }}cargo clippy{{ NORMAL }}
+	{{ set_title('🦀 ' + recipe_name()) }}
 	{{ if !links { echo(info('Clippy docs links hidden, show them with --links')) } }}
-	{{ if dupes { echo(warning([BOLD + 'dupes', 'mode enabled, will flag multiple dependency versions'])) } }}
+	{{ if dupes { echo(warning([BOLD + 'dupes', 'will be flagged'])) } }}
 	{{ if strict { echo(warning([BOLD + 'strict', 'mode enabled with Ystorian lints'])) } }}
 	{{ if fix { echo(warning([BOLD + 'fix', 'mode enabled'])) } }}
 
@@ -113,25 +115,26 @@ clippy links strict dupes fix profile='dev': check_env
 		{{ if strict { prepend('--deny clippy::', clippy_deny_list) } }} \
 		{{ prepend('--allow clippy::', clippy_allow_list) }}
 
-	echo "{{ set_title('') + done(profile) }}"
-alias lint := clippy
+	echo {{ done([profile, reset_title]) }}
 
 # Clippy with only `lint`
 [env('CARGO_TERM_QUIET', 'true')]
 [group('Rust')]
 clippy_lint lint: check_env
-	echo {{ CYAN }}Run {{ BOLD }}cargo clippy{{ NORMAL + CYAN }} for the \
-		{{ YELLOW + lint + CYAN }} lint{{ NORMAL }}
+	echo {{ CYAN }}Run {{ BOLD }}cargo clippy{{ NORMAL }}
+	echo {{ info(['Lint:', BOLD + lint]) }}
+
 	cargo clippy --all-targets --all-features --all -- --warn clippy::{{ lint }}
+
 	echo {{ done(lint) }}
 
 # Fix easy Clippy lints (requires no uncommitted changes)
-[env("CARGO_TERM_QUIET", "true")]
 [group('Rust')]
 clippy_fix: check_env
 	echo {{ CYAN }}Fix {{ ITALIC }}easy{{ NORMAL + CYAN }} Clippy lints{{ NORMAL }}
-	echo ⚠️ {{ YELLOW }}Commit all your changes first{{ NORMAL }}
-	cargo clippy --fix
+
+	just clippy --fix
+
 	echo {{ done('') }}
 
 # Run unit and integration tests
@@ -139,7 +142,7 @@ clippy_fix: check_env
 [no-exit-message]
 test profile='dev': check_env
 	echo {{ CYAN }}Run {{ BOLD }}cargo test{{ NORMAL }}
-	echo "{{ display_profile(profile) }}"
+	{{ display_profile(profile) }}
 
 	# Notes:
 	# - `kache test-runner` version 1.00 errors with "no LC_RPATH's found".
@@ -157,30 +160,26 @@ test profile='dev': check_env
 		env -u CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER \
 			cargo test --all-features --workspace --future-incompat-report --release; \
 	fi
-	echo "{{ set_title('') + done(profile) }}"
+
+	echo {{ done([profile, reset_title]) }}
 
 # Clean the workspace
 [group('Rust')]
 clean_workspace:
 	echo {{ CYAN }}Clean the workspace{{ NORMAL }}
 
-	cargo-clean-all \
-		--keep-empty-target \
-		--keep-executable-same-dir \
-		--yes \
-		.
-	just deny
+	cargo-clean-all --keep-empty-target --keep-executable-same-dir --yes .
 
 	echo {{ done('') }}
 
 # Build and install on this machine
 [group('Rust')]
 install: check_env
-	echo "{{ CYAN }}Run {{ BOLD }}cargo install{{ set_title('🦀 ' + recipe_name()) + NORMAL }}"
+	echo {{ CYAN }}Run {{ BOLD }}cargo install{{ set_title('🦀 ' + recipe_name()) }}{{ NORMAL }}
 
 	cargo install --path .
 
-	echo "{{ set_title('') + done('') }}"
+	echo {{ done([reset_title]) }}
 
 # Download the crates in `Cargo.toml`
 [group('Rust')]
@@ -188,5 +187,28 @@ fetch:
 	echo {{ CYAN }}Run {{ BOLD }}cargo fetch{{ NORMAL }}
 
 	cargo fetch --locked --verbose
+
+	echo {{ done('') }}
+
+# Comment Rust source files with their relative path
+[group('Rust')]
+[script]
+comment_rs *files:
+	echo {{ CYAN }}Comment Rust source files with their relative path{{ NORMAL }}
+
+	files="{{ files }}"
+	[ -n "$files" ] || files=$(git ls-files '*.rs')
+	for file in $files; do
+		[ -f "$file" ] || continue
+		first=$(head -n 1 "$file")
+		[ "$first" = "// $file" ] && continue
+		tmp=$(mktemp)
+		case "$first" in
+			"// "*.rs) { echo "// $file"; tail -n +2 "$file"; } > "$tmp" ;;
+			*) { printf '// %s\n\n' "$file"; cat "$file"; } > "$tmp" ;;
+		esac
+		cat "$tmp" > "$file" && rm "$tmp"
+		echo {{ dim(GREEN + "$file") }}
+	done
 
 	echo {{ done('') }}

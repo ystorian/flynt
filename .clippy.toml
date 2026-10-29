@@ -6,4 +6,17 @@ allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
 
-doc-valid-idents = ["MHz", "GHz"]
+doc-valid-idents = [
+	"IPv4",
+	"IPv6",
+	"KiB",
+	"MiB",
+	"GiB",
+	"TiB",
+	"MHz",
+	"GHz",
+	"FreeBSD",
+	"NetBSD",
+	"OpenBSD",
+	"SQLx",
+]
