@@ -104,7 +104,12 @@ pinact update no_cooldown fast: check_command_pinact
 	{{ fast_hint(fast) }}
 
 	if [ ! -f "{{ pinact_config }}" ]; then
-		echo {{ warning(['Config file not found:', BOLD + pinact_config]) }};
+		if [ -n "${CI:-}" ]; then
+			echo {{ error(['Config file required in CI:', BOLD + pinact_config]) }};
+			exit 1;
+		else
+			echo {{ warning(['Config file not found:', BOLD + pinact_config]) }};
+		fi;
 	fi
 
 	if [ -d ".github/workflows" ]; then
