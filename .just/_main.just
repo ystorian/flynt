@@ -18,6 +18,7 @@ import 'ci.just'
 additional_cargo_tools := ['zizmor']
 
 # Setup this project (tooling, hooks)
+[group('_')]
 setup:
 	just no_index
 
@@ -27,6 +28,7 @@ setup:
 	just clean_workspace
 
 # Bump all dependencies
+[group('_')]
 bump:
 	just bump_cargo
 	just update_actions

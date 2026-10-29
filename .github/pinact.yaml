@@ -1,0 +1,13 @@
+# @template/.github/pinact.yaml
+
+version: 3
+
+min_age:
+  # Cooldown period in days.
+  value: 2
+
+rules:
+  # No cooldown for our own reusable workflows.
+  - min_age: 0
+    conditions:
+      - expr: ActionRepoOwner == "ystorian"

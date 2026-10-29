@@ -10,6 +10,10 @@ set minimum-version := '1.58.0'
 [windows]
 set shell := ['C:\Program Files\Git\bin\bash.exe', '-cu']
 
+# Set the default script interpreter on Windows for `[script]` recipes.
+[windows]
+set script-interpreter := ['C:\Program Files\Git\bin\sh.exe', '-eu']
+
 # Don't print comments.
 set ignore-comments
 

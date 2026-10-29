@@ -36,7 +36,7 @@ env:
   # Optional minimum Rust toolchain version.
   # - empty: Use the runner's preinstalled toolchain and skip caching.
   # - set: Install and cache that version only when the runner has an older one.
-  RUST_VERSION: "1.99"
+  RUST_VERSION: "1.99.1"
 
   # Link with LLVM's lld-link on Windows, faster than the default linker.
   CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
@@ -53,38 +53,43 @@ jobs:
 
   changes:
     # Uses `dorny/paths-filter` with `.github/filters.yaml` to skip irrelevant jobs.
-    name: Detect changes
-    runs-on: ubuntu-slim
+    name: Workflows
+    uses: ystorian/workflows/.github/workflows/detect_changes.yaml@d44c66f5b7f3ab40cab485240ad0247a48dce664 # v1.2.0
     permissions:
       contents: read
-    outputs:
-      ci: ${{ steps.filter.outputs.ci || 'true' }}
-    steps:
-      - name: Checkout the source
-        if: github.event_name == 'push'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Detect file changes based on filters.yaml
-        if: github.event_name == 'push'
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        with:
-          predicate-quantifier: 'every'
-          filters: .github/filters.yaml
 
 
   check:
     name: Check - Linux arm64
     needs: changes
-    if: needs.changes.outputs.ci == 'true'
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-26.04-arm
     permissions:
       contents: read
 
     steps:
+      - name: Install cargo tools
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: |
+            cargo-deny
+            just
+            zizmor
+
+      - name: Install Pinact
+        # Temporary workaround for https://github.com/suzuki-shunsuke/pinact-action/issues/1209
+        run: |
+          set -euo pipefail
+          version="5.0.2"
+          release="https://github.com/suzuki-shunsuke/pinact/releases/download/v${version}"
+          archive="pinact_linux_arm64.tar.gz"
+          curl -fsSL -o "/tmp/${archive}" "${release}/${archive}"
+          curl -fsSL -o /tmp/pinact_checksums.txt "${release}/pinact_${version}_checksums.txt"
+          (cd /tmp && grep " ${archive}\$" pinact_checksums.txt | sha256sum -c -)
+          mkdir -p "/tmp/pinact_${version}"
+          tar -xzf "/tmp/${archive}" -C "/tmp/pinact_${version}" pinact
+          echo "/tmp/pinact_${version}" >> "$GITHUB_PATH"
+
       - name: Checkout the source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,25 +101,16 @@ jobs:
           cargo fmt --all --check
 
       - name: Check action versions with Pinact
-        uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a # v3.0.0
-        with:
-          fix: "false"
-          verify: "true"
-          verify_min_age: "true"
-          min_age: "7"
-
-      - name: Install cargo tools
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
-        with:
-          tool: |
-            cargo-deny
-            just@1.58.0
-            zizmor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: just check_actions
 
       - name: Check Just recipes
         run: just check_just
 
       - name: Check actions with Zizmor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: just audit_actions
 
       - name: Check Rust vulnerabilities with cargo-deny
@@ -124,7 +120,7 @@ jobs:
   test:
     name: Test - ${{matrix.name}}
     needs: changes
-    if: needs.changes.outputs.ci == 'true'
+    if: needs.changes.outputs.run == 'true'
     runs-on: ${{matrix.os}}
     permissions:
       contents: read
@@ -166,14 +162,13 @@ jobs:
           }
           CURRENT="$(rustc --version | cut -d' ' -f2)"
           if [ -z "${RUST_VERSION}" ]; then
-            echo "No minimum version, using the preinstalled version ${CURRENT}."
+            echo "No minimum version set, using ${CURRENT}."
             echo "preinstalled=true" >> "$GITHUB_OUTPUT"
           elif ver_newer "${RUST_VERSION}" "${CURRENT}"; then
-            echo "The preinstalled version ${CURRENT} is older than the minimum version \
-              ${RUST_VERSION} - will install ${RUST_VERSION}."
+            echo "Runner is on ${CURRENT}, older than ${RUST_VERSION}, installing ${RUST_VERSION}."
             echo "preinstalled=false" >> "$GITHUB_OUTPUT"
           else
-            echo "The preinstalled version ${CURRENT} meets the minimum version ${RUST_VERSION}."
+            echo "Runner is on ${CURRENT}, not installing ${RUST_VERSION}."
             echo "preinstalled=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -191,7 +186,7 @@ jobs:
 
       - name: Linux - Setup Mold
         if: startsWith(matrix.os, 'ubuntu')
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@339e96b4ff1f3bd865856ba4cbbe8818a7acb038 # v1
         with:
           mold-version: 3.0.0
 
@@ -259,49 +254,20 @@ jobs:
           du -sh target/ci
 
 
-  cache-cleanup:
-    name: Cache cleanup
+  cargo-cache-cleanup:
+    name: Workflows
     needs: test
     if: github.ref == 'refs/heads/main'
-    # This needs the `gh` CLI, not available on `ubuntu-slim`.
-    runs-on: ubuntu-26.04-arm
+    uses: ystorian/workflows/.github/workflows/cargo_cache_cleanup.yaml@d44c66f5b7f3ab40cab485240ad0247a48dce664 # v1.2.0
     permissions:
-      actions: write # Required to list and delete the cache entries of this repository.
-
-    steps:
-      - name: Delete the superseded Cargo caches
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          gh api "repos/${REPO}/actions/caches?per_page=100&ref=refs/heads/main" --paginate \
-            --jq '.actions_caches[] | select(.key | startswith("cargo-")) | [.id, .key, .created_at] | @tsv' \
-            | sort -k3 -r \
-            | awk -F'\t' '{ split($2, f, "-"); g = f[1]"-"f[2]"-"f[3]"-"f[4]; if (seen[g]++) print $1, $2 }' \
-            | while read -r id key; do
-                echo "Deleting the superseded cache ${key}"
-                gh api -X DELETE "repos/${REPO}/actions/caches/${id}"
-              done
+      actions: write # Required to list and delete the cache entries.
 
 
-  # Set `Require status checks to pass` only to `Status check`.
+  # Set `Require status checks to pass` only to `Workflows / Status check`.
   status:
-    name: Status check
+    name: Workflows
     needs: [changes, check, test]
     if: always()
-    runs-on: ubuntu-slim
-    steps:
-      - name: Validate jobs status
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          CHECK_RESULT: ${{ needs.check.result }}
-          TEST_RESULT: ${{ needs.test.result }}
-        run: |
-          echo "changes=$CHANGES_RESULT check=$CHECK_RESULT test=$TEST_RESULT"
-          if [ "$CHANGES_RESULT" = "failure" ] || [ "$CHANGES_RESULT" = "cancelled" ] \
-            || [ "$CHECK_RESULT" = "failure" ] || [ "$CHECK_RESULT" = "cancelled" ] \
-            || [ "$TEST_RESULT" = "failure" ] || [ "$TEST_RESULT" = "cancelled" ]; then
-            echo "::error::A required CI job failed or was cancelled."
-            exit 1
-          fi
-          echo "All required CI jobs passed or were skipped."
+    uses: ystorian/workflows/.github/workflows/status_check.yaml@d44c66f5b7f3ab40cab485240ad0247a48dce664 # v1.2.0
+    with:
+      needs: ${{ toJSON(needs) }}
