@@ -68,6 +68,28 @@ jobs:
       contents: read
 
     steps:
+      - name: Install cargo tools
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: |
+            cargo-deny
+            just
+            zizmor
+
+      - name: Install Pinact
+        # Temporary workaround for https://github.com/suzuki-shunsuke/pinact-action/issues/1209
+        run: |
+          set -euo pipefail
+          version="5.0.2"
+          release="https://github.com/suzuki-shunsuke/pinact/releases/download/v${version}"
+          archive="pinact_linux_arm64.tar.gz"
+          curl -fsSL -o "/tmp/${archive}" "${release}/${archive}"
+          curl -fsSL -o /tmp/pinact_checksums.txt "${release}/pinact_${version}_checksums.txt"
+          (cd /tmp && grep " ${archive}\$" pinact_checksums.txt | sha256sum -c -)
+          mkdir -p "/tmp/pinact_${version}"
+          tar -xzf "/tmp/${archive}" -C "/tmp/pinact_${version}" pinact
+          echo "/tmp/pinact_${version}" >> "$GITHUB_PATH"
+
       - name: Checkout the source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,25 +101,16 @@ jobs:
           cargo fmt --all --check
 
       - name: Check action versions with Pinact
-        uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a # v3.0.0
-        with:
-          fix: "false"
-          verify: "true"
-          verify_min_age: "true"
-          min_age: "7"
-
-      - name: Install cargo tools
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: |
-            cargo-deny
-            just@1.58.0
-            zizmor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: just check_actions
 
       - name: Check Just recipes
         run: just check_just
 
       - name: Check actions with Zizmor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: just audit_actions
 
       - name: Check Rust vulnerabilities with cargo-deny
