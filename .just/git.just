@@ -19,7 +19,7 @@ precommit_script := f'''
 [no-exit-message]
 [script]
 enable_githooks:
-	echo {{ CYAN }}Enable the git hooks in {{ GREEN + githooks_dir + NORMAL }}
+	echo {{ title(['Enable the git hooks in', BOLD + githooks_dir]) }}
 
 	not_found='';
 
@@ -50,7 +50,7 @@ enable_githooks:
 [no-exit-message]
 [script]
 check_precommit:
-	echo {{ CYAN }}Check {{ GREEN }}pre-commit hook{{ NORMAL }}
+	echo {{ title(['Check the', BOLD + 'pre-commit hook', 'installation']) }}
 
 	installed='';
 	enabled='';
@@ -95,7 +95,7 @@ check_precommit:
 [no-exit-message]
 [script]
 create_precommit enable:
-	echo {{ CYAN }}Create a git hook pre-commit script {{ YELLOW + precommit_file + NORMAL }}
+	echo {{ title(['Create a git hook pre-commit script', BOLD + precommit_file]) }}
 
 	just create_dir {{ githooks_dir }}
 
@@ -135,7 +135,7 @@ precommit_just:
 [no-exit-message]
 [script]
 check_tag tag allow_dirty:
-	echo {{ CYAN }}Check if this release can be tagged {{ GREEN + tag + NORMAL }}
+	echo {{ title(['Check if this release can be tagged', BOLD + tag]) }}
 
 	# Tag name starts with `v`.
 	if [ "{{ replace_regex(tag, '^v\d.*', '') }}" != "" ]; then
@@ -218,7 +218,7 @@ check_tag tag allow_dirty:
 push_tag allow_dirty tag commit='':
 	just check_tag {{ tag }} {{ if allow_dirty { '--allow-dirty' } }}
 
-	echo {{ CYAN }}Push the tag {{ GREEN + tag + NORMAL }}
+	echo {{ title(['Push the tag', BOLD + tag]) }}
 
 	git tag --sign {{ tag }} {{ commit }} --message "Release {{ tag }}"
 	git push origin refs/tags/{{ tag }}
@@ -226,15 +226,25 @@ push_tag allow_dirty tag commit='':
 	echo {{ done('') }}
 
 # Delete a `tag`
-[confirm(YELLOW + '⚠️  Are you sure to delete the tag ' + RED + tag + YELLOW + ' here and in GitHub? ' + CYAN)]
+[confirm(YELLOW + '⚠️  Are you sure to delete the tag ' + RED + tag + YELLOW + ' here and in GitHub? ' + CYAN + '[y/n]')]
 [group('Git')]
 [no-exit-message]
+[script]
 delete_tag tag:
-	echo {{ CYAN }}Delete the tag {{ RED + tag + CYAN }} in this repo{{ NORMAL }}
+	echo {{ title(['Delete the tag', BG_RED + BOLD + ' ' + tag]) }}
 
-	-git tag -d '{{ tag }}'
+	if [ "$(git tag --list '{{ tag }}')" ]; then
+		git tag -d '{{ tag }}' 2>/dev/null;
+		echo {{ info(['Deleted', tag, BOLD + 'from this repo']) }};
+	else
+		echo {{ warning(['Local tag not found:', BOLD + tag]) }};
+	fi
 
-	echo {{ CYAN }}Delete the tag {{ RED + tag + CYAN }} in GitHub{{ NORMAL }}
-	-git push origin --delete '{{ tag }}'
+	if [ "$(git ls-remote --tags origin '{{ tag }}')" ]; then
+		git push origin --delete '{{ tag }}';
+		echo {{ info(['Deleted', tag, BOLD + 'from GitHub']) }};
+	else
+		echo {{ warning(['Remote tag not found:', BOLD + tag]) }};
+	fi
 
 	echo {{ done('') }}

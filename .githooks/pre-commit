@@ -2,7 +2,7 @@
 #
 # .githooks/pre-commit
 #
-# Install git pre-commit hooks in your local repo with `just install_git_hooks`.
+# Enable this pre-commit script with `just enable_githooks`.
 
 # .just/git.just
 just precommit_just

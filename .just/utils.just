@@ -7,6 +7,14 @@
 # - aarch64 -> arm64
 arch_short := if arch() == "x86_64" { "x64" } else if arch() == "aarch64" { "arm64" } else { arch() }
 
+# Rust and Cargo native targets per OS.
+[linux]
+native_target := arch() + '-unknown-linux-gnu'
+[macos]
+native_target := arch() + '-apple-darwin'
+[windows]
+native_target := arch() + '-pc-windows-msvc'
+
 # Random temp file (per-recipe).
 temp_file := env('TMPDIR') + '/just.' + file_stem(source_file()) + '.' + uuid() + '.tmp'
 # macOS: /var/folders/by/<random>/T//just.<just file>.<uuid>.tmp
@@ -18,22 +26,26 @@ today := datetime('%Y-%m-%d')
 
 ## Display functions
 
+# Display the recipe heading.
+# 🟦 [<message>]
+title(message) := '"' + NORMAL + style(['cyan', 'reverse'], '🟦 ' + join_list(message, NORMAL + style(['cyan', 'reverse']) + ' ') + ' ') + '"'
+
 # Display after a successful recipe.
 # ✅ 2026-07-15 12:07:16.571 <recipe name> [<recipe arguments>]
 done(args) := '"' + NORMAL + '✅ ' + style(['dim', 'green'], datetime('%F %T%.3f ')) + style('green', recipe_name()) + ' ' + style(['dim', 'green'], join_list(args)) + '"'
 
 # Display an error message.
 # Note: add `[no-exit-message]` on recipes for cleaner output.
-# ❌ <recipe name> Error: [<message>]
-error(message) := '"' + NORMAL + '❌ ' + style(['red', 'dim'], recipe_name()) + style(['red', 'bold'], ' Error: ') + style('yellow', join_list(message, NORMAL + YELLOW + ' ')) + '"'
+# 🟥 <recipe name> Error: [<message>]
+error(message) := '"' + NORMAL + '🟥 ' + style(['red', 'dim'], recipe_name()) + style(['red', 'bold'], ' Error: ') + style('yellow', join_list(message, NORMAL + YELLOW + ' ')) + '"'
 
 # Display a warning message.
 # ⚠️ Warning: [<message>]
 warning(message) := '"' + NORMAL + '⚠️  ' + style(['yellow', 'dim', 'bold'], 'Warning: ') + style('yellow', join_list(message, NORMAL + YELLOW + ' ')) + '"'
 
 # Display an info message.
-# 🅘 [<message>]
-info(message) := '"' + style(['dim', 'blue'], '🅘  ') + style('blue', join_list(message, NORMAL + BLUE + ' ')) + '"'
+# 🔷 [<message>]
+info(message) := '"' + NORMAL + '🔷 ' + style('blue', join_list(message, NORMAL + BLUE + ' ')) + '"'
 
 # Display an indented and dimmed message.
 # __[<message>]
@@ -207,9 +219,9 @@ create_dir *dir:
 delete_dir *dir:
 	for dir in {{ quote(dir) }}; do
 		if [ -d "$dir" ]; then
-			rm -rf "$dir" 2>/dev/null
-			&& echo {{ dim('Deleted directory ' + YELLOW + BOLD + "$dir") }}
-			|| echo {{ error(['Could not delete directory', BOLD + "$dir"]) }};
+			rm -rf "$dir" 2>/dev/null &&
+				echo {{ dim('Deleted directory ' + YELLOW + BOLD + "$dir") }} ||
+				echo {{ error(['Could not delete directory', BOLD + "$dir"]) }};
 		fi;
 	done
 
@@ -232,15 +244,25 @@ test_var *variable:
 ## Tools
 
 # Check if a command is available
+[arg('brew', long='brew', short='b', help='Homebrew formula')]
+[arg('macos', long='macos', short='m', help='Installation command on macOS')]
+[arg('linux', long='linux', short='l', help='Installation command on Linux')]
+[arg('cargo', long='cargo', short='c', help='Installation command for Cargo tools')]
+[arg('winget', long='winget', short='i', help='WinGet installation ID')]
+[arg('windows', long='windows', short='w', help='Installation command on Windows')]
 [group('Utils')]
 [no-exit-message]
 [private]
 [script]
-check_command command macos_text='' windows_text='':
+check_command command brew=[] cargo=[] macos=[] linux=[] windows=[] winget=[]:
 	if ! command -v {{ command }} >/dev/null 2>&1; then
-		echo {{ error(['The command', RED + command, 'is not available']) }};
-		{{ if os() == 'macos' { echo(info(['Install', YELLOW + command, 'with', MAGENTA + macos_text])) } }}
-		{{ if os() == 'windows' { echo(info(['Install', YELLOW + command, 'with', MAGENTA + windows_text])) } }}
+		echo {{ error(['The command', BOLD + command, 'is not available']) }};
+		{{ if brew { echo(info(['To install it with HomeBrew, run:', MAGENTA + 'just brew' + brew])) } }}
+		{{ if macos && os() == 'macos' { echo(info(['To install it on macOS, run:', MAGENTA + macos])) } }}
+		{{ if linux && os() == 'linux' { echo(info(['To install it on Linux, run:', MAGENTA + linux])) } }}
+		{{ if windows && os() == 'windows' { echo(info(['To install it on Windows, run:', MAGENTA + windows])) } }}
+		{{ if winget { echo(info(['To install it on Windows, run:', MAGENTA + 'just winget ' + winget])) } }}
+		{{ if cargo { echo(info(['To install it, run:', MAGENTA + 'just cargo_install ' + cargo])) } }}
 		exit 1;
 	fi
 
@@ -249,14 +271,14 @@ check_command command macos_text='' windows_text='':
 [no-exit-message]
 [private]
 check_command_bash:
-	just check_command bash '' 'winget install --id Git.Git'
+	just check_command bash --winget='Git.Git'
 
 # Check if `bun` is available
 [group('Utils')]
 [no-exit-message]
 [private]
 check_command_bun:
-	just check_command bun 'brew install oven-sh/bun/bun' 'winget install Oven-sh.Bun'
+	just check_command bun --brew='oven-sh/bun/bun' --winget='Oven-sh.Bun'
 
 # Lints
 
@@ -265,7 +287,7 @@ check_command_bun:
 [no-exit-message]
 [script]
 lint_just:
-	echo {{ CYAN }}Lint {{ BOLD }}all justfiles{{ NORMAL + style('dim') }}
+	echo {{ title(['Lint', BOLD + 'all justfiles']) + style('dim') }}
 
 	just --format --indentation '{{ "\t" }}' --justfile justfile
 
@@ -308,7 +330,7 @@ check_just:
 [group('Utils')]
 [no-exit-message]
 check_markdown: check_command_bun
-	echo {{ CYAN }}Check all {{ BOLD }}markdown{{ NORMAL + CYAN }} files{{ NORMAL }}
+	echo {{ title(['Check all', BOLD + 'markdown', 'files']) }}
 
 	bun x --bun markdownlint-cli2 "**/*.md" "#**/.terraform" "#**/data"
 
@@ -322,7 +344,7 @@ check_markdown: check_command_bun
 [no-exit-message]
 [windows]
 no_index dir='.':
-	echo {{ CYAN }}Disable content indexing on generated files{{ NORMAL }}
+	echo {{ title('Disable content indexing on generated files') }}
 
 	# macOS.
 	{{ if os() == 'macos' { echo(dim(['Disable', YELLOW + BOLD + 'Time Machine backups'])) } }}
@@ -439,13 +461,108 @@ no_index_dir dir:
 	fi
 
 # Alias `j` to `just`
+[group('Utils')]
 [private]
 [unix]
 alias_just:
 	ln -s "{{ which('just') }}" "{{ parent_directory(which('just')) / 'j' }}"
 
 # Alias `j` to `just`
+[group('Utils')]
 [private]
 [windows]
 alias_just:
 	ln -s "{{ which('just') }}" "{{ parent_directory(which('just')) / 'j.exe' }}"
+
+# Install with WinGet
+[group('Utils')]
+[private]
+[windows]
+winget id:
+	winget install --exact --id {{ id }}
+
+# Install with Homebrew
+[group('Utils')]
+[macos]
+[private]
+brew formula:
+	brew install {{ formula }}
+
+# Add relative path headers
+[group('Utils')]
+add_headers:
+	echo {{ title('Add relative path headers') }}
+
+	echo {{ info(['Rust:', BOLD + '*.rs']) }}
+	just add_headers_ext --ext='rs' --prefix='//'
+
+	echo {{ info(['TypeScript:', BOLD + '*.ts']) }}
+	just add_headers_ext --ext='ts' --prefix='//'
+
+	echo {{ info(['GitHub workflows:', BOLD + '*.yaml']) }}
+	just add_headers_ext --ext='yaml' --prefix='#'
+
+	echo {{ info(['Fluent translation resources:', BOLD + '*.ftl']) }}
+	just add_headers_ext --ext='ftl' --prefix='###'
+
+	echo {{ info(['CSS:', BOLD + '*.css']) }}
+	just add_headers_ext --ext='css' --prefix='/*' --suffix='*/'
+
+	echo {{ done('') }}
+
+# Add relative path headers
+[arg('ext', long='ext', help='File extension')]
+[arg('prefix', long='prefix', help='Comment prefix')]
+[arg('suffix', long='suffix', help='Comment suffix')]
+[group('Utils')]
+[private]
+[script]
+add_headers_ext ext prefix suffix=[]:
+	suffix='{{ if suffix { ' ' + suffix } else { '' } }}'
+	files=$(find . \( -name target -o -name .git -o -name dist -o -name node_modules \) -prune -o -type f -name '*.{{ ext }}' -print | sed 's|^\./||' | sort)
+	for file in $files; do
+		[ -f "$file" ] || continue
+		header=$(head -n 1 "$file")
+		[ "$header" = "{{ prefix }} $file$suffix" ] && printf '\r\033[2K\033[2;32m   %s' "$file" && continue
+		tmp=$(mktemp)
+		case "$header" in
+			"{{ prefix }} "*.{{ ext }}"$suffix") { echo "{{ prefix }} $file$suffix"; tail -n +2 "$file"; } > "$tmp" ;;
+			*) { printf '{{ prefix }} %s%s\n\n' "$file" "$suffix"; cat "$file"; } > "$tmp" ;;
+		esac
+		cat "$tmp" > "$file" && rm "$tmp"
+		printf '\r\033[2K\033[2;33m   %s\n' "$file"
+	done
+	printf '\r\033[2K'
+
+# Check for typos
+[group('Utils')]
+[no-exit-message]
+check_typos: check_command_typos
+	echo {{ title('Check for typos') }}
+
+	if [ ! -f ".typos.toml" ]; then \
+		echo {{ error(['Configuration file not found:', BOLD + '.typos.toml']) }}; \
+		exit 1; \
+	fi
+
+	typos
+
+	echo {{ done('') }}
+
+# Check if `typos` is available
+[group('Utils')]
+[private]
+check_command_typos:
+	just check_command typos -c='typos-cli'
+
+# Install cargo tool
+[env("GITHUB_TOKEN", github_token)]
+[group('Utils')]
+[no-exit-message]
+cargo_install tool:
+	echo {{ title(['Install cargo tool', tool, 'with', BOLD + 'cargo-binstall']) }}
+
+	cargo-binstall --log-level warn --locked --no-confirm --disable-telemetry \
+		--targets {{ native_target }} {{ tool }} \
+	&& echo {{ done('') }} \
+	|| echo {{ error(['Could not install', BOLD + tool]) }}

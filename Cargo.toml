@@ -2,7 +2,7 @@
 
 [package]
 name = "flynt"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 description = "Fluent linter for Askama templates"
 license = "MIT OR Apache-2.0"
@@ -27,7 +27,7 @@ name = "flynt"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = { version = "1", default-features = false, features = ["std"] }
+anyhow = { version = "1.0", default-features = false, features = ["std"] }
 clap = { version = "4.6", default-features = false, features = [
 	"std",
 	"derive",
@@ -38,10 +38,10 @@ clap = { version = "4.6", default-features = false, features = [
 ] }
 fluent-syntax = { version = "0.12", default-features = false }
 glob = { version = "0.3", default-features = false }
-regex = { version = "1.11", default-features = false, features = ["std", "perf", "unicode-perl"] }
-serde = { version = "1", default-features = false, features = ["std", "derive"] }
-serde_json = { version = "1", default-features = false, features = ["std"] }
-toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
+regex = { version = "1.13", default-features = false, features = ["std", "perf", "unicode-perl"] }
+serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+toml = { version = "1.2", default-features = false, features = ["std", "parse", "serde"] }
 walkdir = { version = "2.5", default-features = false }
 
 [profile.release]

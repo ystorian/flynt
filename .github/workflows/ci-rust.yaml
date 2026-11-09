@@ -21,6 +21,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
+  # Optional minimum Rust toolchain version.
+  # - empty: Use the runner's preinstalled toolchain and skip caching.
+  # - set: Install and cache that version only when the runner has an older one.
+  RUST_VERSION: "1.99.1"
+
   # Always display colored outputs.
   CARGO_TERM_COLOR: always
 
@@ -32,11 +37,6 @@ env:
 
   # Disable debug info to reduce the size of `./target`
   CARGO_PROFILE_TEST_DEBUG: 0
-
-  # Optional minimum Rust toolchain version.
-  # - empty: Use the runner's preinstalled toolchain and skip caching.
-  # - set: Install and cache that version only when the runner has an older one.
-  RUST_VERSION: "1.99.1"
 
   # Link with LLVM's lld-link on Windows, faster than the default linker.
   CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
@@ -54,7 +54,7 @@ jobs:
   changes:
     # Uses `dorny/paths-filter` with `.github/filters.yaml` to skip irrelevant jobs.
     name: Workflows
-    uses: ystorian/workflows/.github/workflows/detect_changes.yaml@d44c66f5b7f3ab40cab485240ad0247a48dce664 # v1.2.0
+    uses: ystorian/workflows/.github/workflows/detect_changes.yaml@99bf9b80277846225c3239684627b6e599d14412 # v1.3.0
     permissions:
       contents: read
 
@@ -65,11 +65,14 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-26.04-arm
     permissions:
+      actions: write # Required to cancel the `test` jobs on failure.
       contents: read
+    timeout-minutes: 1
 
     steps:
+
       - name: Install cargo tools
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: |
             cargo-deny
@@ -116,6 +119,15 @@ jobs:
       - name: Check Rust vulnerabilities with cargo-deny
         run: just deny
 
+      - name: Cancel on failure
+        # Cancel the `test` jobs on failure since they don't depend on `check`.
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "${RUN_ID}" --repo "${REPO}"
+
 
   test:
     name: Test - ${{matrix.name}}
@@ -128,6 +140,7 @@ jobs:
       run:
         # Only for matrix using Windows.
         shell: bash
+    timeout-minutes: 3
 
     strategy:
       matrix:
@@ -147,7 +160,6 @@ jobs:
         run: |
           fsutil behavior set disablelastaccess 1
           fsutil behavior set disable8dot3 1
-
 
       - name: Check the minimum Rust version ${{ env.RUST_VERSION }}
         id: toolchain
@@ -180,7 +192,7 @@ jobs:
         if: steps.toolchain.outputs.preinstalled != 'true'
         run: rustup default ${RUST_VERSION}
 
-      - name: Linux - Add Clippy
+      - name: Linux - Add Rust components
         if: startsWith(matrix.os, 'ubuntu') && steps.toolchain.outputs.preinstalled != 'true'
         run: rustup component add clippy
 
@@ -258,7 +270,7 @@ jobs:
     name: Workflows
     needs: test
     if: github.ref == 'refs/heads/main'
-    uses: ystorian/workflows/.github/workflows/cargo_cache_cleanup.yaml@d44c66f5b7f3ab40cab485240ad0247a48dce664 # v1.2.0
+    uses: ystorian/workflows/.github/workflows/cargo_cache_cleanup.yaml@99bf9b80277846225c3239684627b6e599d14412 # v1.3.0
     permissions:
       actions: write # Required to list and delete the cache entries.
 
@@ -268,6 +280,6 @@ jobs:
     name: Workflows
     needs: [changes, check, test]
     if: always()
-    uses: ystorian/workflows/.github/workflows/status_check.yaml@d44c66f5b7f3ab40cab485240ad0247a48dce664 # v1.2.0
+    uses: ystorian/workflows/.github/workflows/status_check.yaml@99bf9b80277846225c3239684627b6e599d14412 # v1.3.0
     with:
       needs: ${{ toJSON(needs) }}

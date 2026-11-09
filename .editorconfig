@@ -29,12 +29,12 @@ max_line_length = 100
 # Specific file formats.
 
 # Markdown.
-[**.md]
+[*.md]
 trim_trailing_whitespace = unset
 indent_style = unset
 
 # Fluent.
-[*.flt]
+[*.ftl]
 indent_size = 2
 indent_style = space
 
@@ -67,8 +67,8 @@ max_line_length = unset
 
 # OpenTofu / Terraform.
 [*.tf]
-indent_size = 2
 indent_style = space
+indent_size = 2
 max_line_length = unset
 
 # D2.
