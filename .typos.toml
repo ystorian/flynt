@@ -1,0 +1,11 @@
+# @template/.typos.toml
+
+[default]
+check-filename = true
+check-file = true
+locale = "en"
+
+[files]
+extend-exclude = [".git/**", "target/**"]
+ignore-hidden = false
+ignore-files = false

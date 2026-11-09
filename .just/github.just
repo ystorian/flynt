@@ -33,7 +33,7 @@ fast_hint(fast) := if env('CI', 'false') == 'false' { if fast { echo(info('Skipp
 [no-exit-message]
 [script]
 audit_actions fast fix: check_command_zizmor
-	echo {{ CYAN }}Audit actions in {{ GREEN }}.github/workflows/*.yaml{{ NORMAL }}
+	echo {{ title(['Audit actions in', BOLD + '.github/workflows/*.yaml']) }}
 
 	{{ if fix { echo(info('Fixing workflows with all fixes, including unsafe fixes')) } }}
 	{{ fast_hint(fast) }}
@@ -41,12 +41,13 @@ audit_actions fast fix: check_command_zizmor
 	# zizmor rejects an empty token.
 	[ -n "${GITHUB_TOKEN:-}" ] || unset GITHUB_TOKEN
 
+	status=0
 	if [ -d ".github/workflows" ]; then
 		for workflow in .github/workflows/*.yaml; do
 			if [ ! {{ fast }} ] || ! {{ is_today('$workflow') }}; then
 				zizmor --no-progress --persona=auditor {{ if fix { '--fix=all' } }} \
 					"$workflow" \
-				{{ if fast { '&& touch "$workflow"' } }};
+				{{ if fast { '&& touch "$workflow"' } }} || status=1;
 			else
 				echo {{ dim(YELLOW + ITALIC + "$workflow") }};
 			fi;
@@ -54,13 +55,14 @@ audit_actions fast fix: check_command_zizmor
 	else
 		echo {{ warning('No workflow found in .github/workflows') }};
 	fi
+	exit "$status"
 
 # Check actions for pinned versions
 [arg('fast', long='fast', flag, help='Cache the result for today')]
 [group('GitHub')]
 [script]
 check_actions fast:
-	echo {{ CYAN }}Check actions in {{ GREEN }}.github/workflows/*.yaml{{ NORMAL }}
+	echo {{ title(['Check actions in', BOLD + '.github/workflows/*.yaml']) }}
 
 	if [ -n "${CI:-}" ]; then
 		just pinact;
@@ -73,7 +75,7 @@ check_actions fast:
 # Update and pin actions
 [group('GitHub')]
 update_actions:
-	echo {{ CYAN }}Update and pin actions in {{ YELLOW }}.github/workflows/*.yaml{{ NORMAL }}
+	echo {{ title(['Update and pin actions in', BOLD + '.github/workflows/*.yaml']) }}
 
 	just pinact --update
 
@@ -83,7 +85,7 @@ update_actions:
 [group('GitHub')]
 [private]
 update_actions_latest:
-	echo {{ CYAN }}Update and pin actions in {{ YELLOW }}.github/workflows/*.yaml{{ NORMAL }}
+	echo {{ title(['Update and pin actions in', BOLD + '.github/workflows/*.yaml', BG_RED + ' no cooldown']) }}
 
 	just pinact --update --no-cooldown
 
@@ -112,6 +114,7 @@ pinact update no_cooldown fast: check_command_pinact
 		fi;
 	fi
 
+	status=0
 	if [ -d ".github/workflows" ]; then
 		echo {{ dim(shell('pinact --version 2>/dev/null')) }};
 		for workflow in .github/workflows/*.y*ml; do
@@ -119,7 +122,7 @@ pinact update no_cooldown fast: check_command_pinact
 				pinact run "$workflow" --log-level warn \
 					{{ if update { '--update' } else { '--check' } }} \
 					{{ if no_cooldown { '--min-age 0' } }} \
-				{{ if !fast { '&& touch "$workflow"' } }};
+					{{ if fast { '&& touch "$workflow"' } }} || status=1;
 			else
 				echo {{ dim(YELLOW + ITALIC + "$workflow") }};
 			fi;
@@ -127,51 +130,36 @@ pinact update no_cooldown fast: check_command_pinact
 	else
 		echo {{ warning('No actions found in .github/workflows') }};
 	fi
+	exit "$status"
 
 # List action secrets for the environment
 [group('GitHub')]
-env_list_secrets env='production' repo=repo:
-	echo {{ CYAN }}List the {{ BOLD }}action secrets{{ NORMAL + CYAN }} for the \
-		{{ YELLOW + env + NORMAL + CYAN }} environment in {{ GREEN + owner + '/' + repo + NORMAL }}
+[no-exit-message]
+env_list_secrets env='production' repo=repo: check_command_gh
+	echo {{ title(['List the', BOLD + 'action secrets', 'for the', BOLD + env, 'environment in', BOLD + owner + '/' + repo]) }}
 
-	just check_command_gh
-
-	gh \
-		secret \
-		list \
-		--env {{ env }} \
-		--repo {{ owner + '/' + repo }} \
-		--app actions
+	gh secret list --env {{ env }} --repo {{ owner }}/{{ repo }} --app actions
 
 	echo {{ done('') }}
 
 # List all secrets not environment restricted
 [group('GitHub')]
-env_list_secrets_all repo=repo:
-	echo {{ CYAN }}List {{ BOLD }}all secrets{{ NORMAL + CYAN }} that are \
-		{{ YELLOW + 'not environment restricted' + NORMAL + CYAN }} in \
-		{{ GREEN + owner + '/' + repo + NORMAL }}
+env_list_secrets_all repo=repo: check_command_gh
+	echo {{ title(['List', BOLD + 'all secrets', 'that are', BOLD + 'not environment restricted', 'in', BOLD + owner + '/' + repo]) }}
 
-	just check_command_gh
-
-	gh \
-		secret \
-		list \
-		--repo {{ owner + '/' + repo }}
+	gh secret list --repo {{ owner }}/{{ repo }}
 
 	echo {{ warning('Secrets should be restricted to environments!') }}
-
 	echo {{ done('') }}
 
 # Add an action secret to an environment
 [group('GitHub')]
 set_env_secret env secret: check_command_gh
-	echo {{ CYAN }}Add action secret to {{ BOLD + owner + '/' + repo + NORMAL }}
+	echo {{ title(['Add the action secret', BOLD + secret, 'in', BOLD + owner + '/' + repo]) }}
 	echo {{ info(['Environment:', BOLD + env]) }}
 	echo {{ info(['Secret:', BOLD + uppercase(secret)]) }}
 
-	gh secret set {{ uppercase(secret) }} --env {{ env }} --repo {{ owner + '/' + repo }} \
-		--app actions
+	gh secret set {{ uppercase(secret) }} --env {{ env }} --repo {{ owner }}/{{ repo }} --app actions
 
 	echo {{ done([secret, env]) }}
 
@@ -180,18 +168,17 @@ set_env_secret env secret: check_command_gh
 [arg('repo', long='repo', value=repo, help='Repository name')]
 [group('GitHub')]
 create_env env repo=repo: check_command_gh
-	echo {{ CYAN }}Create the {{ YELLOW + env + CYAN }} environment in \
-		{{ GREEN + owner + '/' + repo + NORMAL }}
+	echo {{ title(['Create the', BOLD + env, 'environment in', BOLD + owner + '/' + repo]) }}
 
 	gh api --method PUT repos/{{ owner }}/{{ repo }}/environments/{{ env }} --jq '.created_at'
 
-	echo {{ CYAN }}Set a custom branch policy{{ NORMAL }}
+	echo {{ info('Set a custom branch policy') }}
 	gh api --method PUT repos/{{ owner }}/{{ repo }}/environments/{{ env }} \
 		--field deployment_branch_policy[protected_branches]=false \
 		--field deployment_branch_policy[custom_branch_policies]=true \
 		--jq '.deployment_branch_policy.custom_branch_policies'
 
-	echo {{ CYAN }}Set the branch protection on {{ GREEN + 'main' + NORMAL }}
+	echo {{ info(['Set the branch protection on', BOLD + 'main']) }}
 	gh api --method POST --field name=main --jq '.total_count' \
 		repos/{{ owner }}/{{ repo }}/environments/{{ env }}/deployment-branch-policies
 
@@ -200,7 +187,7 @@ create_env env repo=repo: check_command_gh
 # List the environments
 [group('GitHub')]
 list_envs repo=repo: check_command_gh
-	echo {{ CYAN }}List environments in {{ GREEN + owner }}/{{ BOLD + repo + NORMAL }}
+	echo {{ title(['List the environments in', BOLD + owner + '/' + repo]) }}
 
 	gh api repos/{owner}/{{ repo }}/environments --jq '.environments[].name'
 
@@ -210,8 +197,7 @@ list_envs repo=repo: check_command_gh
 [group('GitHub')]
 [no-exit-message]
 check_rulesets_repo repo=repo: check_command_gh check_command_jq
-	echo {{ CYAN }}Check {{ BOLD }}rulesets{{ NORMAL + CYAN }} in \
-	{{ YELLOW + owner }}/{{ BOLD + repo + NORMAL }}
+	echo {{ title(['Check the rulesets in', BOLD + owner + '/' + repo]) }}
 
 	just check_main_branch {{ owner }} {{ repo }}
 	just check_branch_protection {{ owner }} {{ repo }}
@@ -224,13 +210,13 @@ check_rulesets_repo repo=repo: check_command_gh check_command_jq
 [no-exit-message]
 [script]
 check_rulesets_org owner=owner: check_command_gh check_command_jq
-	echo {{ CYAN }}Check {{ YELLOW + owner + CYAN }} rulesets{{ NORMAL }}
+	echo {{ title(['Check the', BOLD + owner, 'organization rulesets']) }}
 
 	failed='';
 
 	for repo_name in $(gh repo list {{ owner }} --limit 200 --no-archived --json name \
 		--jq '.[].name' | sort); do
-		echo "\n{{ YELLOW + BOLD }}$repo_name:{{ NORMAL }}";
+		echo {{ info('$repo_name') }};
 		just check_main_branch {{ owner }} $repo_name;
 		just check_branch_protection {{ owner }} $repo_name;
 		just check_rulesets {{ owner }} "$repo_name" || failed="${failed:+$failed }$repo_name";
@@ -312,6 +298,7 @@ check_rulesets owner=owner repo=repo:
 
 # Check the branch protection status
 [group('GitHub')]
+[no-exit-message]
 [private]
 [script]
 check_branch_protection owner=owner repo=repo:
@@ -330,7 +317,8 @@ check_branch_protection owner=owner repo=repo:
 [private]
 [script]
 check_main_branch owner=owner repo=repo:
-	default_branch=$(gh repo view {{ owner }}/{{ repo }} --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null);
+	default_branch=$(gh repo view {{ owner }}/{{ repo }} --json defaultBranchRef --jq '
+		.defaultBranchRef.name' 2>/dev/null);
 
 	if [ "$default_branch" != "main" ]; then
 		echo {{ error(['Main branch in', BOLD + owner + '/' + repo, 'is', RED + "$default_branch"]) }};
@@ -341,11 +329,11 @@ check_main_branch owner=owner repo=repo:
 [no-exit-message]
 [script]
 set_status_check repo=repo: check_command_gh check_command_jq
-	echo {{ CYAN }}Set the required status check in {{ YELLOW + owner + '/' + BOLD + repo + NORMAL }}
+	echo {{ title(['Set the required status check in', BOLD + owner + '/' + repo]) }}
 	echo {{ info(['Status check name:', BOLD + status_check]) }}
 
-	ids=$(gh api repos/{{ owner }}/{{ repo }}/rulesets \
-		--jq '.[]|select(.source_type=="Repository")|.id');
+	ids=$(gh api repos/{{ owner }}/{{ repo }}/rulesets --jq '
+		.[]|select(.source_type=="Repository")|.id');
 
 	updated='';
 	for id in $ids; do
@@ -357,12 +345,11 @@ set_status_check repo=repo: check_command_gh check_command_jq
 
 		# Replace all required checks with one check.
 		printf '%s' "$ruleset" |
-			jq --arg check '{{ status_check }}' --argjson app {{ github_actions_id }} \
-				'{rules: [.rules[] | if .type=="required_status_checks"
-					then .parameters.required_status_checks=[{context: $check, integration_id: $app}]
-					else . end]}' |
-			gh api --method PUT repos/{{ owner }}/{{ repo }}/rulesets/"$id" --input - \
-				--jq '.name' >/dev/null;
+			jq --arg check '{{ status_check }}' --argjson app {{ github_actions_id }} '
+				{rules: [.rules[] | if .type=="required_status_checks"
+				then .parameters.required_status_checks=[{context: $check, integration_id: $app}]
+				else . end]}' |
+			gh api --method PUT repos/{{ owner }}/{{ repo }}/rulesets/"$id" --input - --jq '.name' >/dev/null;
 
 		name=$(printf '%s' "$ruleset" | jq -r '.name');
 		echo {{ dim(['Updated ruleset', GREEN + '$name']) }};
@@ -382,22 +369,22 @@ set_status_check repo=repo: check_command_gh check_command_jq
 [group('GitHub')]
 [private]
 check_command_gh:
-	just check_command gh 'brew install gh' 'winget install --id GitHub.cli'
+	just check_command gh --brew='gh' --winget='GitHub.cli'
 
 # Check if `jq` is available
 [group('GitHub')]
 [private]
 check_command_jq:
-	just check_command jq 'brew install jq' 'winget install --id jqlang.jq'
+	just check_command jq --brew='jq' --winget='jqlang.jq'
 
 # Check if `pinact` is available
 [group('GitHub')]
 [private]
 check_command_pinact:
-	just check_command pinact 'brew install pinact' 'winget install --id suzuki-shunsuke.pinact'
+	just check_command pinact --brew='pinact' --winget='suzuki-shunsuke.pinact'
 
 # Check if `zizmor` is available
 [group('GitHub')]
 [private]
 check_command_zizmor:
-	just check_command zizmor 'just install_cargo_tools' 'just install_cargo_tools'
+	just check_command zizmor -m='just install_cargo_tools' -w='just install_cargo_tools'

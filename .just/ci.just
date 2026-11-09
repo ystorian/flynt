@@ -7,7 +7,7 @@
 [env("CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS", "")]
 [group('CI')]
 ci:
-	echo {{ CYAN }}Run all {{ GREEN }}CI{{ CYAN }} checks{{ NORMAL }}
+	echo {{ title(['Run all', BOLD + 'CI', 'checks']) }}
 
 	# Preparation.
 	just lint_just

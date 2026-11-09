@@ -13,17 +13,6 @@ required_cargo_tools := ['cargo-clean-all', 'cargo-deny', 'cargo-update', 'just'
 # - Additional Cargo tools required by this project are defined in `.just/_main.just`.
 # - In `_main.just` set the variable `additional_cargo_tools := []` for none.
 
-# cargo-binstall.
-binstall_options := ['--locked', '--no-confirm', '--disable-telemetry']
-
-# Native target per OS.
-[linux]
-native_target := arch() + '-unknown-linux-gnu'
-[macos]
-native_target := arch() + '-apple-darwin'
-[windows]
-native_target := arch() + '-pc-windows-msvc'
-
 # API token for `crates.io`.
 #
 # Note: use `cargo login` to generate.
@@ -45,39 +34,49 @@ cargo_has_include := if trim(shell('tomli query --filepath Cargo.toml workspace.
 # Install cargo tools
 [env("GITHUB_TOKEN", github_token)]
 [group('Cargo')]
-install_cargo_tools:
-	echo {{ CYAN }}Install cargo tools with {{ BOLD }}cargo-binstall{{ NORMAL }}
+[no-exit-message]
+[script]
+install_cargo_tools *tools:
+	echo {{ title(['Install cargo tools with', BOLD + 'cargo-binstall']) }}
 
 	# Install cargo-binstall first.
-	if ! command -v cargo-binstall >/dev/null 2>&1; then \
-		echo {{ BLUE }}Install {{ GREEN }}cargo-binstall{{ NORMAL }}; \
-		cargo install --locked --target {{ native_target }} cargo-binstall; \
+	if ! command -v cargo-binstall >/dev/null 2>&1; then
+		echo {{ BLUE }}Install {{ GREEN }}cargo-binstall{{ NORMAL }};
+		cargo install --locked --target {{ native_target }} cargo-binstall;
 	fi
 
 	echo {{ dim(['Required:', GREEN + required_cargo_tools]) }}
 	echo {{ dim(['Additional:', YELLOW + additional_cargo_tools]) }}
+	{{ if tools { echo(info(['Arguments:', BOLD + join_list(tools)])) } }}
 
-	cargo-binstall \
-		{{ join_list(binstall_options) }} \
+	cargo-binstall --log-level warn --locked --no-confirm --disable-telemetry \
 		--targets {{ native_target }} \
-		--log-level warn \
 		{{ join_list(required_cargo_tools) }} \
-		{{ join_list(additional_cargo_tools) }}
+		{{ join_list(additional_cargo_tools) }} \
+		{{ if tools { join_list(tools) } }} \
+		&& echo {{ done('') }} \
+		|| echo {{ error(['Could not install', BOLD + join_list(tools)]) }}
 
-	echo {{ done('') }}
+# List installed Cargo tools
+list_cargo_tools:
+	echo {{ title('Installed cargo tools') + GREEN }}
+	cargo-binstall --list
+
+	echo {{ BLUE }}
+	cargo-binstall --prune
 
 # Update Rust
 [group('Cargo')]
 update_rust:
-	echo {{ CYAN }}Update Rust{{ NORMAL }}
+	echo {{ title('Update Rust') }}
 
-	echo {{ dim('self update') }}
+	echo {{ dim(['rustup', BOLD + 'self update']) }}
 	rustup --quiet self update >/dev/null
 
-	echo {{ dim('update') }}
+	echo {{ dim(['rustup', BOLD + 'update']) }}
 	rustup --quiet update stable  >/dev/null
 
-	echo {{ dim('rust-analyzer') }}
+	echo {{ dim(['Add', BOLD + 'rust-analyzer']) }}
 	rustup --quiet component add rust-analyzer
 
 	echo {{ info(shell('rustc --version')) }}
@@ -87,7 +86,7 @@ update_rust:
 # Update Cargo tools
 [group('Cargo')]
 update_cargo_tools: install_cargo_tools
-	echo {{ CYAN }}Update cargo tools{{ NORMAL }}
+	echo {{ title('Update cargo tools') }}
 	echo {{ dim(['Cooldown:', GREEN + BOLD + '7', GREEN + 'days']) }}
 
 	cargo install-update --all --git --locked --cooldown 7d --quiet
@@ -97,7 +96,7 @@ update_cargo_tools: install_cargo_tools
 # Update Cargo.lock without bumping dependencies
 [group('Cargo')]
 lock_cargo:
-	echo {{ CYAN }}Update {{ GREEN }}Cargo.lock{{ NORMAL }}
+	echo {{ title(['Update', GREEN + 'Cargo.lock']) }}
 
 	cargo update --offline --workspace --verbose
 
@@ -106,7 +105,7 @@ lock_cargo:
 # Bump all Cargo.lock dependencies
 [group('Cargo')]
 bump_cargo:
-	echo {{ CYAN }}Bump all dependencies in {{ YELLOW }}Cargo.lock{{ NORMAL }}
+	echo {{ title(['Bump all dependencies in', BOLD + 'Cargo.lock']) }}
 
 	cargo update --verbose
 
@@ -117,33 +116,35 @@ bump_cargo:
 # Check the crate for publication in crates.io
 [group('Cargo')]
 [no-exit-message]
+[script]
 publish_check:
-	echo {{ CYAN }}Check this crate{{ NORMAL }}
+	echo {{ title(['Check this crate for publication in', BOLD + 'crates.io']) }}
 
 	echo {{ dim('Cargo.toml: package.publish = true') }}
-	if [ "{{ cargo_is_publishable }}" = "false" ]; then \
-		echo {{ error([BOLD + 'package.publish = true', 'is not set in', BOLD + 'Cargo.toml']) }}; \
-		exit 1; \
+	if [ "{{ cargo_is_publishable }}" = "false" ]; then
+		echo {{ error([BOLD + 'package.publish = true', 'is not set in', BOLD + 'Cargo.toml']) }};
+		exit 1;
 	fi
 
 	echo {{ dim('Cargo.toml: package.include = [...]') }}
-	if [ "{{ cargo_has_include }}" = "false" ]; then \
-		echo {{ error([BOLD + 'package.include', 'is not set in', BOLD + 'Cargo.toml']) }}; \
-		exit 1; \
+	if [ "{{ cargo_has_include }}" = "false" ]; then
+		echo {{ error([BOLD + 'package.include', 'is not set in', BOLD + 'Cargo.toml']) }};
+		exit 1;
 	fi
 
-	echo {{ CYAN }}List {{ YELLOW }}non-standard{{ CYAN }} files that will be included{{ RED }}
-	-cargo package --list --allow-dirty \
-	| grep -vE '^(Cargo\.toml(\.orig)?|Cargo\.lock|\.cargo_vcs_info\.json|src/.*|LICENSE.*|README.*|[a-z]*\.svg)$'
+	echo {{ info(['List', YELLOW + 'non-standard', 'files that might be included']) + RED }}
+	cargo package --list --allow-dirty |
+		grep -vE '^(Cargo\.toml(\.orig)?|Cargo\.lock|\.cargo_vcs_info\.json|src/.*|LICENSE.*|README.*|[a-z]*\.svg)$'
 
-	echo {{ CYAN }}Run {{ YELLOW }}cargo publish{{ CYAN }} in {{ GREEN }}dry-run{{ NORMAL }}
-
+	echo {{ info(['Run a ', GREEN + 'dry-run', 'of', YELLOW + 'cargo publish']) }}
 	cargo publish --dry-run --all-features --workspace --locked --allow-dirty
+
+	echo {{ done('') }}
 
 # Publish the crate to crates.io
 [group('Cargo')]
 publish: publish_check
-	echo {{ CYAN }}Publish to {{ GREEN }}crates.io{{ NORMAL }}
+	echo {{ title(['Publish to', BOLD + 'crates.io']) }}
 
 	just check_tag {{ tag }}
 	cargo publish
@@ -168,7 +169,7 @@ precommit_cargo:
 # Return the MSRV for this repo and its crates
 [group('Cargo')]
 check_msrv:
-	echo {{ CYAN }}Get the {{ YELLOW }}Minimum Supported Rust Version{{ NORMAL }}
+	echo {{ title(['Get the', BOLD + 'Minimum Supported Rust Version']) }}
 
 	echo {{ YELLOW }}MRSV:{{ GREEN + BOLD }} \
 		`cargo metadata --frozen --format-version 1 | jq -r '\
@@ -190,13 +191,11 @@ check_msrv:
 		' \
 	| column -t
 
-	echo {{ NORMAL }}
-
 # Create a minisign key pair
 [group('Cargo')]
 [no-exit-message]
 create_minisign_keys:
-	echo {{ CYAN }}Create a {{ YELLOW }}Minisign{{ NORMAL + CYAN }} key pair{{ NORMAL }}
+	echo {{ title(['Create a', BOLD + 'Minisign', 'key pair']) }}
 
 	minisign -G -p signing.pub -s signing.key
 
@@ -206,47 +205,39 @@ create_minisign_keys:
 [group('Cargo')]
 [private]
 check_command_curl:
-	just check_command curl 'brew install curl' 'winget install --id cURL.cURL'
+	just check_command curl --brew='curl' --winget='cURL.cURL'
 
 # Check the security settings for `crate`
 [group('Cargo')]
 [no-exit-message]
-check_crate_security crate=repo:
-	# API: https://crates.io/api/openapi.json
-	echo {{ CYAN }}Check {{ BOLD }}crates.io{{ NORMAL + CYAN }} security settings for \
-		{{ YELLOW + crate + NORMAL }}
+[script]
+check_crate_security crate=repo: check_command_curl check_command_jq
+	echo {{ title(['Check', BOLD + 'crates.io', 'security settings for', BOLD + crate]) }}
 
-	just check_command_curl
-	just check_command_jq
+	crate_json=$(curl --silent --fail --user-agent "{{ crates_io_user_agent }}" \
+		"https://crates.io/api/v1/crates/{{ crate }}") ||
+		{ echo {{ error(['Crate is not published on', BOLD + 'crates.io']) }};
+		exit 1;}
 
-	crate_json=$(curl \
-		--silent \
-		--fail \
-		--user-agent "{{ crates_io_user_agent }}" \
-		"https://crates.io/api/v1/crates/{{ crate }}") || { \
-		echo {{ error(['Crate is not published on', BOLD + 'crates.io']) }}; \
-		exit 1;} \
-	&& if [ "$(printf '%s' "$crate_json" | jq -r '.crate.trustpub_only')" = "true" ]; then \
-		echo {{ info(['Trusted publishing is', GREEN + 'enabled']) }}; \
-	else \
-		echo {{ error('Trusted publishing is not enabled') }}; \
-		exit 1; \
+	if [ "$(printf '%s' "$crate_json" | jq -r '.crate.trustpub_only')" = "true" ]; then
+		echo {{ info(['Trusted publishing is', GREEN + 'enabled']) }};
+	else
+		echo {{ error('Trusted publishing is not enabled') }};
+		exit 1;
 	fi
 
-	if [ "{{ crates_io_token }}" = "" ]; then \
-		echo {{ error(['Not logged in', BOLD + 'crates.io', 'registry']) }}; \
-		echo {{ info(['Run', MAGENTA + 'cargo login']) }}; \
-		exit 1; \
+	if [ "{{ crates_io_token }}" = "" ]; then
+		echo {{ error(['Not logged in', BOLD + 'crates.io', 'registry']) }};
+		echo {{ info(['Run', MAGENTA + 'cargo login']) }};
+		exit 1;
 	fi
 
-	curl \
-		--silent \
-		--fail \
-		--user-agent "{{ crates_io_user_agent }}" \
+	curl --silent --fail --user-agent "{{ crates_io_user_agent }}" \
 		--header "Authorization: {{ crates_io_token }}" \
-		"https://crates.io/api/v1/trusted_publishing/github_configs?crate={{ crate }}" \
-	| jq -r '.github_configs[] \
-		| "Repository:  \(.repository_owner)/\(.repository_name)\nWorkflow:    \(.workflow_filename)\nEnvironment: \(.environment // "any")\n"'
+		"https://crates.io/api/v1/trusted_publishing/github_configs?crate={{ crate }}" |
+			jq -r '.github_configs[] | "Repository:  \(.repository_owner)/\(.repository_name)\nWorkflow:    \(.workflow_filename)\nEnvironment: \(.environment // "any")\n"'
+
+	echo {{ done('') }}
 
 # Show the crates depending on `crate`
 [group('Cargo')]
@@ -254,17 +245,22 @@ check_crate_security crate=repo:
 [script]
 deps crate:
 	# Note: runs once per version when `crate` has multiple versions.
+
 	tree="cargo tree --target all --all-features --workspace"
+
 	case "{{ crate }}" in
 		*@*) $tree --invert "{{ crate }}"; exit ;;
 	esac
+
 	# List each version of the crate once.
-	versions=$($tree --prefix none --format '{p}' --quiet \
-		| grep "^{{ crate }} v" | cut -d ' ' -f 2 | sort -u)
+	versions=$($tree --prefix none --format '{p}' --quiet |
+		grep "^{{ crate }} v" | cut -d ' ' -f 2 | sort -u)
+
 	if [ -z "$versions" ]; then
-		echo {{ error([BOLD + crate, 'not found in the dependency tree']) }}
+		echo {{ error(['Crate', BOLD + crate, 'not found in the dependency tree']) }}
 		exit 1
 	fi
+
 	for version in $versions; do
 		$tree --invert "{{ crate }}@${version#v}"
 		echo
@@ -274,7 +270,7 @@ deps crate:
 [group('Cargo')]
 [no-exit-message]
 deps_dupe:
-	echo {{ CYAN }}Show duplicate crates with multiple versions{{ NORMAL }}
+	echo {{ title('Show duplicate crates with multiple versions') }}
 	cargo tree --target all --all-features --workspace --duplicates --quiet
 
 # Check for Visual Studio Build Tools
@@ -283,9 +279,9 @@ deps_dupe:
 [script]
 [windows]
 check_build_tools: check_command_bash
-	echo {{ CYAN }}Check for Visual Studio {{ BOLD }}Build Tools{{ NORMAL }}
+	echo {{ title(['Check for Visual Studio', BOLD + 'Build Tools']) }}
 
-	error='0';
+	error='';
 
 	just test_var {{ llvm_var }}
 	echo {{ dim(['LLVM environment variable:', BOLD + llvm_var, '=', YELLOW + env(llvm_var)]) }}
@@ -320,4 +316,8 @@ check_build_tools: check_command_bash
 		error='1';
 	fi
 
-	exit $error
+	if [-n "$error" ]; then
+		echo {{ done('') }};
+	else
+		exit $error;
+	fi

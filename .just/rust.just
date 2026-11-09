@@ -39,7 +39,7 @@ check_env:
 # Benchmark
 [group('Rust')]
 bench profile='dev': check_env
-	echo {{ CYAN }}Run {{ BOLD }}cargo bench{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo bench']) }}
 	{{ display_profile(profile) }}
 
 	cargo bench --all-features --workspace \
@@ -50,7 +50,7 @@ bench profile='dev': check_env
 # Check for errors
 [group('Rust')]
 check profile='dev': check_env
-	echo {{ CYAN }}Run {{ BOLD }}cargo check{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo check']) }}
 	{{ display_profile(profile) }}
 
 	cargo check --workspace --all-features --future-incompat-report \
@@ -61,7 +61,7 @@ check profile='dev': check_env
 # Check dependencies and licenses
 [group('Rust')]
 deny:
-	echo {{ CYAN }}Run {{ BOLD }}cargo-deny{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo-deny']) }}
 
 	# Delete the cache if corrupted.
 	cache="${TMPDIR:-${TEMP:-/tmp}}/cargo-deny/std-replacement-data"; \
@@ -76,7 +76,7 @@ deny:
 # Format Rust code
 [group('Rust')]
 format:
-	echo {{ CYAN }}Run {{ BOLD }}cargo fmt{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo fmt']) }}
 
 	cargo fmt --all
 
@@ -91,9 +91,9 @@ alias fmt := format
 [group('Rust')]
 [no-exit-message]
 clippy links strict dupes fix profile='dev': check_env
-	echo {{ CYAN }}Run {{ BOLD }}cargo clippy{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo clippy']) }}
 	{{ set_title('🦀 ' + recipe_name()) }}
-	{{ if !links { echo(info('Clippy docs links hidden, show them with --links')) } }}
+	{{ if !links { echo(dim(['Clippy docs links are hidden by default, set', BOLD + '--links', 'to show them'])) } }}
 	{{ if dupes { echo(warning([BOLD + 'dupes', 'will be flagged'])) } }}
 	{{ if strict { echo(warning([BOLD + 'strict', 'mode enabled with Ystorian lints'])) } }}
 	{{ if fix { echo(warning([BOLD + 'fix', 'mode enabled'])) } }}
@@ -121,7 +121,7 @@ clippy links strict dupes fix profile='dev': check_env
 [env('CARGO_TERM_QUIET', 'true')]
 [group('Rust')]
 clippy_lint lint: check_env
-	echo {{ CYAN }}Run {{ BOLD }}cargo clippy{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo clippy']) }}
 	echo {{ info(['Lint:', BOLD + lint]) }}
 
 	cargo clippy --all-targets --all-features --all -- --warn clippy::{{ lint }}
@@ -131,7 +131,7 @@ clippy_lint lint: check_env
 # Fix easy Clippy lints (requires no uncommitted changes)
 [group('Rust')]
 clippy_fix: check_env
-	echo {{ CYAN }}Fix {{ ITALIC }}easy{{ NORMAL + CYAN }} Clippy lints{{ NORMAL }}
+	echo {{ title(['Fix', BOLD + 'easy', 'Clippy lints']) }}
 
 	just clippy --fix
 
@@ -141,7 +141,7 @@ clippy_fix: check_env
 [group('Rust')]
 [no-exit-message]
 test profile='dev': check_env
-	echo {{ CYAN }}Run {{ BOLD }}cargo test{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo test']) }}
 	{{ display_profile(profile) }}
 
 	# Notes:
@@ -166,7 +166,7 @@ test profile='dev': check_env
 # Clean the workspace
 [group('Rust')]
 clean_workspace:
-	echo {{ CYAN }}Clean the workspace{{ NORMAL }}
+	echo {{ title(['Clean the', BOLD + 'workspace']) }}
 
 	cargo-clean-all --keep-empty-target --keep-executable-same-dir --yes .
 
@@ -175,7 +175,8 @@ clean_workspace:
 # Build and install on this machine
 [group('Rust')]
 install: check_env
-	echo {{ CYAN }}Run {{ BOLD }}cargo install{{ set_title('🦀 ' + recipe_name()) }}{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo install']) }}
+	{{ display_profile('release') }}
 
 	cargo install --path .
 
@@ -184,31 +185,8 @@ install: check_env
 # Download the crates in `Cargo.toml`
 [group('Rust')]
 fetch:
-	echo {{ CYAN }}Run {{ BOLD }}cargo fetch{{ NORMAL }}
+	echo {{ title(['Run', BOLD + 'cargo fetch']) }}
 
 	cargo fetch --locked --verbose
-
-	echo {{ done('') }}
-
-# Comment Rust source files with their relative path
-[group('Rust')]
-[script]
-comment_rs *files:
-	echo {{ CYAN }}Comment Rust source files with their relative path{{ NORMAL }}
-
-	files="{{ files }}"
-	[ -n "$files" ] || files=$(git ls-files '*.rs')
-	for file in $files; do
-		[ -f "$file" ] || continue
-		first=$(head -n 1 "$file")
-		[ "$first" = "// $file" ] && continue
-		tmp=$(mktemp)
-		case "$first" in
-			"// "*.rs) { echo "// $file"; tail -n +2 "$file"; } > "$tmp" ;;
-			*) { printf '// %s\n\n' "$file"; cat "$file"; } > "$tmp" ;;
-		esac
-		cat "$tmp" > "$file" && rm "$tmp"
-		echo {{ dim(GREEN + "$file") }}
-	done
 
 	echo {{ done('') }}
