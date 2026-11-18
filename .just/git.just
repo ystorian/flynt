@@ -1,6 +1,29 @@
 # @template/.just/git.just
 
 # Variables.
+
+# Repository owner (organization) and name.
+# Read `owner/repo` from the git remote URL.
+owner_repo := replace_regex(shell('git remote get-url origin 2>/dev/null || true'), '^.*github\.com[:/]|\.git$', '')
+# This is to avoid a dependency on `gh` and consumming GraphQL API quota.
+
+# Return the repository owner (organization).
+owner := replace_regex(owner_repo, '/.*$', '')
+
+# Return the repository name.
+repo := replace_regex(owner_repo, '^.*/', '')
+
+# pr_dev_files.
+# Paths of the dev files to refresh.
+dev_paths := ['.just', '.github', '.githooks', '.vscode', '.clippy.toml', '.dockerignore', '.editorconfig', '.gitattributes', '.gitignore', '.markdownlint.json', '.rustfmt.toml', '.typos.toml', 'deny.toml', 'droast.toml', 'justfile']
+
+# Branch for the dev files PR.
+dev_branch := 'refresh-dev-files'
+
+# List of check run conclusions failing in CI.
+run_failures := '["failure", "cancelled", "timed_out", "action_required", "startup_failure"]'
+
+# Pre-commit hook.
 githooks_dir := '.githooks'
 precommit_file := githooks_dir + '/pre-commit'
 precommit_script := f'''
@@ -13,6 +36,8 @@ precommit_script := f'''
 	# .just/git.just
 	just precommit_just
 '''
+
+## Recipes.
 
 # Enable the git hooks in `.githooks`
 [group('Git')]
@@ -112,6 +137,165 @@ create_precommit enable:
 	{{ if enable { 'just enable_githooks && echo ' + done('') } }}
 	{{ if !enable { 'echo ' + info(['Enable with', MAGENTA + 'just enable_githooks']) } }}
 
+# Commit the changed dev files to a new branch and create a PR
+[group('Git')]
+[no-exit-message]
+[script]
+pr_dev_files branch=dev_branch: check_command_gh
+	echo {{ title(['Refresh the dev files in a', BOLD + 'pull request']) }}
+
+	just lint_just;
+	just check_typos;
+	just check_actions --fast;
+	just audit_actions --fast;
+
+	# Local branch is `main`.
+	current="$(git branch --show-current)";
+	if [ "$current" != 'main' ]; then
+		echo {{ error(['Not on the', GREEN + 'main', 'branch:', RED + '$current']) }};
+		exit 1;
+	fi
+
+	# Local branch is remote branch.
+	git fetch --quiet origin main
+	if [ "$(git rev-parse main)" != "$(git rev-parse origin/main)" ]; then
+		echo {{ error(['The local', BOLD + 'main', 'branch differs from', BOLD + 'origin/main']) }};
+		exit 1;
+	fi
+
+	# Branch does not exist.
+	if git show-ref --verify --quiet 'refs/heads/{{ branch }}' ||
+			[ -n "$(git ls-remote --heads origin '{{ branch }}')" ]; then
+		echo {{ error(['The branch already exists:', BOLD + branch]) }};
+		exit 1;
+	fi
+
+	# Modified, deleted, and new dev files.
+	files="$(git ls-files --modified --deleted --others --exclude-standard -- {{ dev_paths }} | sort -u)";
+	if [ -z "$files" ]; then
+		echo {{ warning('No changed dev files') }};
+		exit 0;
+	fi
+
+	echo {{ note('Modified dev files:') }};
+	echo "$files" | while IFS= read -r file; do
+		echo {{ dim(GREEN + '$file') }};
+	done
+
+	git switch --quiet --create '{{ branch }}'
+	echo "$files" | xargs git add --all --
+	echo "$files" | xargs git commit --quiet --signoff --message 'Refresh dev files' --
+	git push --quiet --set-upstream origin '{{ branch }}'
+
+	body="$(printf 'Refresh the dev files:\n\n%s\n' "$(echo "$files" | sed 's/^/- `/; s/$/`/')")";
+
+	# Create the PR with the REST API.
+	number="$(gh api --method POST 'repos/{{ owner }}/{{ repo }}/pulls' -f base=main -f head='{{ branch }}' \
+		-f title='Refresh dev files' -f body="$body" --jq '.number')";
+	echo {{ info(['Created PR', BOLD + '#$number']) }};
+
+	# Assign the PR to the current user.
+	gh api --method POST "repos/{{ owner }}/{{ repo }}/issues/$number/assignees" \
+		-f "assignees[]=$(gh api user --jq '.login')" --jq '.html_url'
+
+	just merge_pr {{ branch }}
+
+# Wait for CI, then squash and merge the PR for `branch`
+[group('Git')]
+[no-exit-message]
+[script]
+merge_pr branch=dev_branch: check_command_gh
+	echo {{ title(['Merge the', BOLD + branch, 'pull request']) }}
+
+	# Local branch is the dev branch.
+	current="$(git branch --show-current)";
+	if [ "$current" != "{{ branch }}" ]; then
+		echo {{ error(['Not on the', GREEN + branch, 'branch:', RED + '$current']) }};
+		exit 1;
+	fi
+
+	# Local branch is pushed.
+	git fetch --quiet origin '{{ branch }}'
+	sha="$(git rev-parse HEAD)";
+	if [ "$sha" != "$(git rev-parse 'origin/{{ branch }}')" ]; then
+		echo {{ error(['The local branch differs from', BOLD + 'origin/' + branch]) }};
+		exit 1;
+	fi
+
+	# Wait for CI, refresh every 5 seconds.
+	echo {{ info('Waiting for CI checks') }};
+	tries=0;
+	while true; do
+		if ! status="$(gh api "repos/{{ owner }}/{{ repo }}/commits/$sha/check-runs" --jq '
+				.check_runs | [length, (map(select(.status != "completed")) | length),
+				(map(select(.conclusion as $c | {{ run_failures }} | index($c))) | length)]
+				| map(tostring) | join(" ")' 2>&1)"; then
+			printf '\n';
+			echo {{ error('GitHub API error') }};
+			echo "$status";
+			echo {{ info(['Try again with', MAGENTA + 'just merge_pr ' + branch]) }};
+			exit 1;
+		fi;
+		set -- $status;
+		total="$1"; pending="$2"; failed="$3";
+
+		if [ "$total" = '0' ]; then
+			tries=$((tries + 1));
+			if [ "$tries" -ge 24 ]; then
+				echo {{ warning('No CI checks found after 2 minutes') }};
+				exit 1;
+			fi;
+		elif [ "$pending" = '0' ]; then
+			break;
+		fi;
+
+		printf '\r\033[2K%s' {{ note([GREEN + 'Checks:', BOLD + '$total', YELLOW + 'Pending:', '$pending', RED + 'Failed:', '$failed', '']) }};
+		for i in {1..5}; do
+			printf '⏵';
+			sleep 1;
+		done;
+	done
+	printf '\r\033[2K';
+
+	gh api "repos/{{ owner }}/{{ repo }}/commits/$sha/check-runs" \
+		--jq '.check_runs[] | "   \(.conclusion)\t\(.name)"'
+
+	if [ "$failed" != '0' ]; then
+		echo {{ error(['CI checks failed:', BOLD + '$failed']) }};
+		exit 1;
+	fi
+	echo {{ info(GREEN + 'CI checks passed') }}
+
+	# Ask before the merge.
+	printf '%s' "{{ YELLOW + 'Squash and merge the PR? ' + CYAN + '[y/n] ' + NORMAL }}";
+	read -r answer;
+	if [ "$answer" != 'y' ]; then
+		echo {{ warning(['PR not merged, still on', BOLD + branch]) }};
+		exit 0;
+	fi
+
+	# Squash and merge the open PR.
+	number="$(gh api 'repos/{{ owner }}/{{ repo }}/pulls?head={{ owner }}:{{ branch }}&state=open' --jq '.[0].number')";
+	if [ -z "$number" ] || [ "$number" = 'null' ]; then
+		echo {{ error(['No open PR for', BOLD + branch]) }};
+		exit 1;
+	fi
+	# The REST API does not add the sign-off.
+	signoff="Signed-off-by: $(git config user.name) <$(git config user.email)>";
+	gh api --method PUT "repos/{{ owner }}/{{ repo }}/pulls/$number/merge" \
+		-f merge_method=squash -f sha="$sha" \
+		-f commit_title="Refresh dev files (#$number)" -f commit_message="$signoff" \
+		--jq '.message'
+
+	# Switch to main, then delete the branch.
+	git switch --quiet main
+	git pull --quiet --ff-only
+	git branch --quiet -D '{{ branch }}'
+	git push --quiet origin --delete '{{ branch }}' 2>/dev/null || true
+
+	echo {{ info([GREEN + 'Merged #$number', '  https://github.com/' + owner + '/' + repo + '/pulls/$number']) }}
+	echo {{ done(branch) }}
+
 # Git hook pre-commit script for Just
 [group('Git')]
 [no-exit-message]
@@ -128,6 +312,14 @@ precommit_just:
 			exit 1;
 		fi;
 	done
+
+# Git hook pre-commit script for Typos
+[group('Git')]
+[no-exit-message]
+[private]
+[script]
+precommit_typos:
+	typos
 
 # Check if this release can be tagged `v#.#.#`
 [arg('allow_dirty', long='allow-dirty', flag, help='Allow dirty state with uncommitted changes')]

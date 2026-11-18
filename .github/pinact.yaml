@@ -4,7 +4,7 @@ version: 3
 
 min_age:
   # Cooldown period in days.
-  value: 2
+  value: 7
 
 rules:
   # No cooldown for our own reusable workflows.
