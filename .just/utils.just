@@ -47,6 +47,10 @@ warning(message) := '"' + NORMAL + '⚠️  ' + style(['yellow', 'dim', 'bold'],
 # 🔷 [<message>]
 info(message) := '"' + NORMAL + '🔷 ' + style('blue', join_list(message, NORMAL + BLUE + ' ')) + '"'
 
+# Display an indented message.
+# ___[<message>]
+note(message) := '"' + NORMAL + '   ' + style('cyan', join_list(message, NORMAL + CYAN + ' ')) + '"'
+
 # Display an indented and dimmed message.
 # __[<message>]
 dim(message) := '"' + style(['cyan', 'dim'], '   ' + join_list(message, NORMAL + style(['cyan', 'dim']) + ' ')) + '"'
@@ -68,8 +72,21 @@ reset_title := "\u{1b}]0;\u{7}"
 
 ## Strings.
 
+# Return a strong password.
+#
+# Notes:
+# - Returns a password between 41 and 59 characters long, with at least 1 special character `_`.
+# - This should be accepted by most systems, some require at least 32, others maximum 64 characters.
+# - The limited alphabet was chosen to be safe for any use case.
+# - Just uses `rand::rng()`, which is considered cryptographically secure.
+# - Each call to this function generates a new string.
+# - Entropy is ~239 bits (should be enough for everyone - famous last words).
+alphabet := 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_'
+digit := '0123456789'
+strong_password() := choose('2' + choose('1', digit), alphabet) + '_' + choose('2' + choose('1', digit), alphabet)
+
 # Base64 decode.
-base64_decode(encoded) := `base64 -d <<< {{ encoded }}`
+base64_decode(encoded) := shell('base64 -d <<< $1', encoded)
 
 ## Files
 
@@ -92,6 +109,23 @@ commit() := `git rev-parse --short HEAD`
 branch() := `git branch --show-current`
 
 ### Recipes
+
+# Rarely used variables and functions, to stop `just-lsp` from complaining
+[group('Utils')]
+[private]
+_utils_unused:
+	echo {{ arch_short }}
+	echo {{ reset_title }}
+	echo {{ temp_file }}
+
+	echo {{ base64_decode('') }}
+	echo {{ branch() }}
+	echo {{ commit() }}
+	echo {{ file_date('') }}
+	echo {{ file_size('') }}
+	echo {{ note('') }}
+	echo {{ set_title('') }}
+	echo {{ strong_password() }}
 
 ## Files
 
@@ -537,12 +571,19 @@ add_headers_ext ext prefix suffix=[]:
 # Check for typos
 [group('Utils')]
 [no-exit-message]
+[script]
 check_typos: check_command_typos
-	echo {{ title('Check for typos') }}
+	echo {{ title(['Check for', BOLD + 'typos']) }}
 
-	if [ ! -f ".typos.toml" ]; then \
-		echo {{ error(['Configuration file not found:', BOLD + '.typos.toml']) }}; \
-		exit 1; \
+	if [ ! -f ".typos.toml" ]; then
+		if [ -f "Cargo.toml" ]; then
+			echo {{ info(['Using configuration from', BOLD + 'Cargo.toml']) }};
+		elif [ -f "_typos.toml" ]; then
+			echo {{ info(['Using', BOLD + 'local', 'configuration file:', BOLD + '_typos.toml']) }};
+		else
+			echo {{ error(['Configuration file not found:', BOLD + '.typos.toml']) }};
+			exit 1;
+		fi;
 	fi
 
 	typos
@@ -551,6 +592,7 @@ check_typos: check_command_typos
 
 # Check if `typos` is available
 [group('Utils')]
+[no-exit-message]
 [private]
 check_command_typos:
 	just check_command typos -c='typos-cli'

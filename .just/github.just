@@ -1,14 +1,6 @@
 # @template/.just/github.just
 
 # Variables.
-# Return the repository name.
-repo := if which("gh") == [] { '' } else { shell("gh repo view --json name --jq '.name'") }
-
-# Return the repository owner (organization).
-owner := if which("gh") == [] { '' } else { shell("gh repo view --json owner --jq '.owner.login'") }
-
-# Return the GitHub user name.
-user := if which("gh") == [] { '' } else { shell("gh api user --jq '.login'") }
 
 # GitHub auth token.
 github_token := if env('GITHUB_TOKEN', '') != '' { env('GITHUB_TOKEN') } else if which("gh") == [] { '' } else { shell('gh auth token 2>/dev/null || echo ""') }
@@ -16,14 +8,26 @@ github_token := if env('GITHUB_TOKEN', '') != '' { env('GITHUB_TOKEN') } else if
 # Name of the check required by the `status check` ruleset.
 status_check := 'Workflows / Status check'
 
+# Property that enables the organization status check ruleset.
+status_check_property := 'require_status_check'
+
 # GitHub Actions app ID for required status checks.
 github_actions_id := '15368'
 
-# Pinact config file..
+# Pinact config file (sets the cooldown period).
 pinact_config := '.github/pinact.yaml'
+
+# Image cooldown.
+cooldown_days := '7'
 
 # Display `--fast` hint.
 fast_hint(fast) := if env('CI', 'false') == 'false' { if fast { echo(info('Skipping workflows that were checked today')) } else { echo(info(['Use', BOLD + '--fast', 'to skip rechecking today'])) } }
+
+# Rarely used variables and functions, to stop `just-lsp` from complaining
+[group('GitHub')]
+[private]
+_github_unused:
+	echo {{ github_actions_id }}
 
 # Audit actions
 [arg('fix', long='fix', flag, help='Fix findings')]
@@ -55,6 +59,8 @@ audit_actions fast fix: check_command_zizmor
 	else
 		echo {{ warning('No workflow found in .github/workflows') }};
 	fi
+
+	echo {{ done('') }}
 	exit "$status"
 
 # Check actions for pinned versions
@@ -75,7 +81,7 @@ check_actions fast:
 # Update and pin actions
 [group('GitHub')]
 update_actions:
-	echo {{ title(['Update and pin actions in', BOLD + '.github/workflows/*.yaml']) }}
+	echo {{ title(['Update and pin', BOLD + 'actions', 'in', BOLD + '.github/workflows/*.yaml']) }}
 
 	just pinact --update
 
@@ -103,7 +109,7 @@ update_actions_latest:
 pinact update no_cooldown fast: check_command_pinact
 	{{ if no_cooldown { echo(warning(['No cooldown period:', BOLD + 'Review updated actions'])) } }}
 	{{ if !no_cooldown { echo(info(['Cooldown period from', BOLD + pinact_config])) } }}
-	{{ fast_hint(fast) }}
+	{{ if !update { fast_hint(fast) } }}
 
 	if [ ! -f "{{ pinact_config }}" ]; then
 		if [ -n "${CI:-}" ]; then
@@ -131,6 +137,105 @@ pinact update no_cooldown fast: check_command_pinact
 		echo {{ warning('No actions found in .github/workflows') }};
 	fi
 	exit "$status"
+
+# Update and pin images in workflows
+[arg('no_cooldown', long='no-cooldown', flag, help='No cooldown for updates')]
+[group('GitHub')]
+[no-exit-message]
+[script]
+update_images no_cooldown: check_command_crane check_command_jq
+	echo {{ title(['Update and pin', BOLD + 'images', 'in', BOLD + '.github/workflows/*.yaml']) }}
+
+	# Each pinned image needs its tag in a comment on the line above:
+	#   # library/postgres:18.7-trixie (2026-11-14)
+	#   image: postgres@sha256:<digest>
+	#
+	# The image line can also be a one-line expression, with the
+	# `name@sha256:<digest>` string inside.
+	#
+	# The new tag keeps the major version and the suffix.
+	# A tag with no version (`latest`) only gets a new digest.
+	# The date in parentheses is the image build date.
+
+	{{ if no_cooldown { echo(warning(['No cooldown period:', BOLD + 'Review updated images'])) } }}
+	{{ if !no_cooldown { echo(info(['Cooldown period:', BOLD + cooldown_days, 'days'])) } }}
+	min_age={{ if no_cooldown { '0' } else { cooldown_days } }}
+
+	# Build date of an image (yyyy-mm-dd).
+	built() {
+		crane config --platform linux/amd64 "$1" | jq -r '.created[:10]'
+	}
+
+	# Days since a date (yyyy-mm-dd).
+	days() {
+		jq -nr --arg date "$1" '(now - ($date + "T00:00:00Z" | fromdateiso8601)) / 86400 | floor'
+	}
+
+	status=0
+	for workflow in .github/workflows/*.y*ml; do
+		[ -f "$workflow" ] || continue
+
+		# Find the comment and image line pairs.
+		awk '
+			/^[[:space:]]*# [^ ]+:[^ ]+( \([0-9-]+\))?[[:space:]]*$/ {
+				line = FNR; ref = $2; date = $3 ? substr($3, 2, 10) : "-"; next
+			}
+			line && /^[[:space:]]*image:/ && match($0, /[A-Za-z0-9._\/:-]+@sha256:[0-9a-f]+/) {
+				print line, FNR, ref, date, substr($0, RSTART, RLENGTH)
+			}
+			{ line = 0 }
+		' "$workflow" > "{{ temp_file }}"
+
+		while read -r comment_line image_line ref date pin; do
+			name=${ref%:*} tag=${ref##*:} digest=${pin#*@}
+
+			# Same major version and suffix.
+			prefix=$(printf '%s' "$tag" | sed -E 's/^(v?[0-9]+).*/\1/')
+			rest=$(printf '%s' "${tag#"$prefix"}" | sed -E 's/\./\\./g; s/[0-9]+/[0-9]+/g')
+
+			if ! tags=$(crane ls "$name"); then
+				echo {{ error(['Could not list tags for', BOLD + '$name']) }};
+				status=1; continue;
+			fi
+
+			# Newest tag out of cooldown, no downgrade.
+			new_tag=''
+			for candidate in $(printf '%s\n' "$tags" | grep -E "^$prefix$rest\$" | sort -rV); do
+				if [ "$min_age" -eq 0 ] || [ "$(days "$(built "$name:$candidate")")" -ge "$min_age" ]; then
+					new_tag=$candidate; break;
+				fi
+				[ "$candidate" != "$tag" ] || break
+			done
+
+			if [ -z "$new_tag" ]; then
+				echo {{ warning(['In cooldown:', BOLD + '$ref']) }};
+				continue;
+			fi
+
+			new_digest=$(crane digest "$name:$new_tag")
+			new_date=$(built "$name@$new_digest")
+			if [ "$new_tag" = "$tag" ] && [ "$new_digest" = "$digest" ] && [ "$new_date" = "$date" ]; then
+				echo {{ dim([GREEN + 'Up-to-date:', BOLD + '$ref']) }};
+				continue;
+			fi
+
+			awk -v comment="$comment_line" -v image="$image_line" \
+				-v ref="$name:$new_tag ($new_date)" -v digest="$new_digest" '
+				FNR == comment { sub(/#.*/, "# " ref) }
+				FNR == image { sub(/@sha256:[0-9a-f]+/, "@" digest) }
+				{ print }
+			' "$workflow" > "$workflow.new"
+			mv "$workflow.new" "$workflow"
+
+			echo {{ note(['Updated', YELLOW + '$ref', 'to', GREEN + '$name:$new_tag', '($new_date)']) }};
+		done < "{{ temp_file }}"
+	done
+
+	just delete_file --silent "{{ temp_file }}"
+
+	[ "$status" -eq 0 ] || exit "$status"
+
+	echo {{ done('') }}
 
 # List action secrets for the environment
 [group('GitHub')]
@@ -189,7 +294,7 @@ create_env env repo=repo: check_command_gh
 list_envs repo=repo: check_command_gh
 	echo {{ title(['List the environments in', BOLD + owner + '/' + repo]) }}
 
-	gh api repos/{owner}/{{ repo }}/environments --jq '.environments[].name'
+	gh api repos/{{ owner }}/{{ repo }}/environments --jq '.environments[].name'
 
 	echo {{ done(repo) }}
 
@@ -214,8 +319,7 @@ check_rulesets_org owner=owner: check_command_gh check_command_jq
 
 	failed='';
 
-	for repo_name in $(gh repo list {{ owner }} --limit 200 --no-archived --json name \
-		--jq '.[].name' | sort); do
+	for repo_name in $(just list_org_repos {{ owner }}); do
 		echo {{ info('$repo_name') }};
 		just check_main_branch {{ owner }} $repo_name;
 		just check_branch_protection {{ owner }} $repo_name;
@@ -317,74 +421,124 @@ check_branch_protection owner=owner repo=repo:
 [private]
 [script]
 check_main_branch owner=owner repo=repo:
-	default_branch=$(gh repo view {{ owner }}/{{ repo }} --json defaultBranchRef --jq '
-		.defaultBranchRef.name' 2>/dev/null);
+	default_branch=$(gh api repos/{{ owner }}/{{ repo }} --jq '.default_branch' 2>/dev/null);
 
 	if [ "$default_branch" != "main" ]; then
 		echo {{ error(['Main branch in', BOLD + owner + '/' + repo, 'is', RED + "$default_branch"]) }};
 	fi
 
-# Set the name of the required status check.
+# Require the status check with the organization ruleset
+[arg('clean', long='clean', flag, help='Remove the status check rules from the repository rulesets')]
 [group('GitHub')]
 [no-exit-message]
 [script]
-set_status_check repo=repo: check_command_gh check_command_jq
-	echo {{ title(['Set the required status check in', BOLD + owner + '/' + repo]) }}
-	echo {{ info(['Status check name:', BOLD + status_check]) }}
+set_status_check clean repo=repo: check_command_gh check_command_jq
+	echo {{ title(['Require', BOLD + status_check, 'in', BOLD + owner + '/' + repo]) }}
+
+	# The organization ruleset targets this property.
+	printf '%s' '{"repository_names":["{{ repo }}"],
+		"properties":[{"property_name":"{{ status_check_property }}","value":"true"}]}' |
+		gh api --method PATCH orgs/{{ owner }}/properties/values --input -;
+	echo {{ dim(['Set', GREEN + status_check_property + '=true']) }};
 
 	ids=$(gh api repos/{{ owner }}/{{ repo }}/rulesets --jq '
 		.[]|select(.source_type=="Repository")|.id');
 
-	updated='';
+	found='';
 	for id in $ids; do
 		ruleset=$(gh api repos/{{ owner }}/{{ repo }}/rulesets/"$id");
 		if ! printf '%s' "$ruleset" |
 			jq -e 'any(.rules[]; .type=="required_status_checks")' >/dev/null; then
 			continue;
 		fi;
-
-		# Replace all required checks with one check.
-		printf '%s' "$ruleset" |
-			jq --arg check '{{ status_check }}' --argjson app {{ github_actions_id }} '
-				{rules: [.rules[] | if .type=="required_status_checks"
-				then .parameters.required_status_checks=[{context: $check, integration_id: $app}]
-				else . end]}' |
-			gh api --method PUT repos/{{ owner }}/{{ repo }}/rulesets/"$id" --input - --jq '.name' >/dev/null;
-
 		name=$(printf '%s' "$ruleset" | jq -r '.name');
-		echo {{ dim(['Updated ruleset', GREEN + '$name']) }};
-		updated=1;
+
+		if [ "{{ clean }}" != "true" ]; then
+			echo {{ warning(['Repository ruleset', BOLD + '$name', 'also requires status checks']) }};
+			found=1;
+			continue;
+		fi;
+
+		# Keep the ruleset when it has other rules.
+		rules=$(printf '%s' "$ruleset" |
+			jq '{rules: [.rules[] | select(.type != "required_status_checks")]}');
+		if [ "$(printf '%s' "$rules" | jq '.rules | length')" = "0" ]; then
+			gh api --method DELETE repos/{{ owner }}/{{ repo }}/rulesets/"$id";
+			echo {{ dim(['Deleted ruleset', GREEN + '$name']) }};
+		else
+			printf '%s' "$rules" |
+				gh api --method PUT repos/{{ owner }}/{{ repo }}/rulesets/"$id" --input - >/dev/null;
+			echo {{ dim(['Removed the status check rule from', GREEN + '$name']) }};
+		fi;
 	done;
 
-	if [ -z "$updated" ]; then
-		echo {{ error('No repository ruleset requires status checks') }};
-		exit 1;
+	if [ -n "$found" ]; then
+		echo {{ info(['Use', BOLD + '--clean', 'to remove these status check rules']) }};
 	fi
 
 	echo {{ done(repo) }}
 
+# Show GitHub REST and GraphQL API quotas
+[group('GitHub')]
+[no-exit-message]
+[script]
+rate_limit: check_command_gh
+	echo {{ title(['GitHub', BOLD + 'REST', 'and', BOLD + 'GraphQL', 'API quotas']) }}
+
+	# This endpoint does not use the quota.
+	gh api rate_limit --jq '.resources | {core, graphql} | to_entries[] |
+		"\(.key) \(.value.remaining) \(.value.limit) \(.value.reset | strflocaltime("%H:%M:%S"))"' |
+	while read -r name remaining limit reset; do
+		[ "$name" = 'core' ] && name='REST   ';
+		[ "$name" = 'graphql' ] && name='GraphQL';
+		color='{{ GREEN }}';
+		[ "$remaining" -lt $((limit / 10)) ] && color='{{ YELLOW }}';
+		[ "$remaining" = '0' ] && color='{{ RED }}';
+		echo {{ note([BOLD + '$name', '${color}$remaining', style('dim') + '/ $limit', BLUE + '  Reset at', BOLD + '$reset']) }};
+	done
+
+	echo {{ done('') }}
+
+# List the names of the active organization repositories
+[group('GitHub')]
+[private]
+list_org_repos owner=owner: check_command_gh
+	gh api --paginate 'orgs/{{ owner }}/repos?per_page=100' \
+		--jq '.[] | select(.archived | not) | .name' | sort
+
 ## Check commands.
+
+# Check if `crane` is available
+[group('GitHub')]
+[no-exit-message]
+[private]
+check_command_crane:
+	just check_command crane --brew='crane'
 
 # Check if `gh` is available
 [group('GitHub')]
+[no-exit-message]
 [private]
 check_command_gh:
 	just check_command gh --brew='gh' --winget='GitHub.cli'
 
 # Check if `jq` is available
 [group('GitHub')]
+[no-exit-message]
 [private]
 check_command_jq:
 	just check_command jq --brew='jq' --winget='jqlang.jq'
 
 # Check if `pinact` is available
 [group('GitHub')]
+[no-exit-message]
 [private]
 check_command_pinact:
 	just check_command pinact --brew='pinact' --winget='suzuki-shunsuke.pinact'
 
 # Check if `zizmor` is available
 [group('GitHub')]
+[no-exit-message]
 [private]
 check_command_zizmor:
 	just check_command zizmor -m='just install_cargo_tools' -w='just install_cargo_tools'

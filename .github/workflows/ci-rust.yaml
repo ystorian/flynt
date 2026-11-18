@@ -20,257 +20,50 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
-env:
-  # Optional minimum Rust toolchain version.
-  # - empty: Use the runner's preinstalled toolchain and skip caching.
-  # - set: Install and cache that version only when the runner has an older one.
-  RUST_VERSION: "1.99.1"
-
-  # Always display colored outputs.
-  CARGO_TERM_COLOR: always
-
-  # Reduce Cargo output.
-  CARGO_TERM_QUIET: true
-
-  # Disable incremental compilation for faster from-scratch builds.
-  CARGO_INCREMENTAL: 0
-
-  # Disable debug info to reduce the size of `./target`
-  CARGO_PROFILE_TEST_DEBUG: 0
-
-  # Link with LLVM's lld-link on Windows, faster than the default linker.
-  CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
-  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: lld-link.exe
-
-  # Override the crt-static flag from `.cargo/config.toml`, this slows down CI runs.
-  CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUSTFLAGS: ""
-  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: ""
-
-  # Specific variables for this project.
-
 
 jobs:
 
   changes:
-    # Uses `dorny/paths-filter` with `.github/filters.yaml` to skip irrelevant jobs.
     name: Workflows
-    uses: ystorian/workflows/.github/workflows/detect_changes.yaml@99bf9b80277846225c3239684627b6e599d14412 # v1.3.0
+    uses: ystorian/workflows/.github/workflows/detect_changes.yaml@a0d64f0770981a7601234405af0afa14637fa7dc # v1.9.2
     permissions:
       contents: read
+    with:
+      filter: ci
 
 
   check:
-    name: Check - Linux arm64
+    name: Workflows
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    runs-on: ubuntu-26.04-arm
+    uses: ystorian/workflows/.github/workflows/check.yaml@a0d64f0770981a7601234405af0afa14637fa7dc # v1.9.2
     permissions:
       actions: write # Required to cancel the `test` jobs on failure.
       contents: read
-    timeout-minutes: 1
-
-    steps:
-
-      - name: Install cargo tools
-        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
-        with:
-          tool: |
-            cargo-deny
-            just
-            zizmor
-
-      - name: Install Pinact
-        # Temporary workaround for https://github.com/suzuki-shunsuke/pinact-action/issues/1209
-        run: |
-          set -euo pipefail
-          version="5.0.2"
-          release="https://github.com/suzuki-shunsuke/pinact/releases/download/v${version}"
-          archive="pinact_linux_arm64.tar.gz"
-          curl -fsSL -o "/tmp/${archive}" "${release}/${archive}"
-          curl -fsSL -o /tmp/pinact_checksums.txt "${release}/pinact_${version}_checksums.txt"
-          (cd /tmp && grep " ${archive}\$" pinact_checksums.txt | sha256sum -c -)
-          mkdir -p "/tmp/pinact_${version}"
-          tar -xzf "/tmp/${archive}" -C "/tmp/pinact_${version}" pinact
-          echo "/tmp/pinact_${version}" >> "$GITHUB_PATH"
-
-      - name: Checkout the source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Check Rust formatting
-        run: |
-          cargo fmt --version
-          cargo fmt --all --check
-
-      - name: Check action versions with Pinact
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: just check_actions
-
-      - name: Check Just recipes
-        run: just check_just
-
-      - name: Check actions with Zizmor
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: just audit_actions
-
-      - name: Check Rust vulnerabilities with cargo-deny
-        run: just deny
-
-      - name: Cancel on failure
-        # Cancel the `test` jobs on failure since they don't depend on `check`.
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-        run: gh run cancel "${RUN_ID}" --repo "${REPO}"
+    with:
+      tools: cargo-deny
+      recipes: check_deny
 
 
   test:
-    name: Test - ${{matrix.name}}
+    name: Workflows
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    runs-on: ${{matrix.os}}
+    uses: ystorian/workflows/.github/workflows/test_rust.yaml@a0d64f0770981a7601234405af0afa14637fa7dc # v1.9.2
     permissions:
       contents: read
-    defaults:
-      run:
-        # Only for matrix using Windows.
-        shell: bash
-    timeout-minutes: 3
-
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-26.04-arm
-            name: Linux arm64
-          - os: windows-11-arm
-            name: Windows arm64
-          - os: macos-26
-            name: macOS arm64
-
-    steps:
-
-      - name: Windows - Make it faster
-        if: startsWith(matrix.os, 'windows')
-        shell: pwsh
-        run: |
-          fsutil behavior set disablelastaccess 1
-          fsutil behavior set disable8dot3 1
-
-      - name: Check the minimum Rust version ${{ env.RUST_VERSION }}
-        id: toolchain
-        run: |
-          ver_newer() {
-            local IFS=. a b i; set -f; a=($1) b=($2); set +f
-            for i in 0 1 2; do
-              [ "${a[i]:-0}" -gt "${b[i]:-0}" ] && return 0
-              [ "${a[i]:-0}" -lt "${b[i]:-0}" ] && return 1
-            done
-            return 1
-          }
-          CURRENT="$(rustc --version | cut -d' ' -f2)"
-          if [ -z "${RUST_VERSION}" ]; then
-            echo "No minimum version set, using ${CURRENT}."
-            echo "preinstalled=true" >> "$GITHUB_OUTPUT"
-          elif ver_newer "${RUST_VERSION}" "${CURRENT}"; then
-            echo "Runner is on ${CURRENT}, older than ${RUST_VERSION}, installing ${RUST_VERSION}."
-            echo "preinstalled=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Runner is on ${CURRENT}, not installing ${RUST_VERSION}."
-            echo "preinstalled=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Update the Rust toolchain
-        if: steps.toolchain.outputs.preinstalled != 'true'
-        run: rustup update --no-self-update ${RUST_VERSION}
-
-      - name: Set the default Rust toolchain
-        if: steps.toolchain.outputs.preinstalled != 'true'
-        run: rustup default ${RUST_VERSION}
-
-      - name: Linux - Add Rust components
-        if: startsWith(matrix.os, 'ubuntu') && steps.toolchain.outputs.preinstalled != 'true'
-        run: rustup component add clippy
-
-      - name: Linux - Setup Mold
-        if: startsWith(matrix.os, 'ubuntu')
-        uses: rui314/setup-mold@339e96b4ff1f3bd865856ba4cbbe8818a7acb038 # v1
-        with:
-          mold-version: 3.0.0
-
-      - name: Checkout the source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Define the Cargo cache keys
-        id: keys
-        env:
-          LOCK_HASH: ${{ hashFiles('**/Cargo.lock') }}
-        run: |
-          echo "lock=$(echo "$LOCK_HASH" | cut -c1-12)" >> "$GITHUB_OUTPUT"
-          echo "rustc=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache the Cargo crates
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        # zizmor: ignore[cache-poisoning]
-        id: cargo-cache
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            target/
-          # The scheduled run gets a unique key and no `restore-keys` to always build from scratch
-          # and save a fresh cache image.
-          key: cargo-${{runner.os}}-${{runner.arch}}-${{ steps.keys.outputs.rustc }}-${{ steps.keys.outputs.lock }}${{ github.event_name == 'schedule' && format('-{0}', github.run_id) || '' }}
-          restore-keys: ${{ github.event_name != 'schedule' && format('cargo-{0}-{1}-{2}-', runner.os, runner.arch, steps.keys.outputs.rustc) || '' }}
-
-      - name: Download all dependencies
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
-        run: cargo fetch --locked
-
-      # The step "Check Rust formatting" (cargo fmt --all --check) is done by the `check` job.
-
-      # All the next cargo commands are with `--frozen` (--locked and --offline)
-
-      - name: Test
-        run: cargo test --frozen --profile ci --all-features --workspace
-
-      - name: Linux - Check and lint with Clippy
-        if: startsWith(matrix.os, 'ubuntu')
-        run: cargo clippy --frozen --profile ci --all-features --workspace -- -D warnings
-
-      - name: Prune the workspace artifacts before saving the cache
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
-        run: |
-          crates="$(cargo metadata --frozen --no-deps --format-version 1 | \
-            jq -r '.packages[].name')"
-          for crate in ${crates}; do
-            file="${crate//-/_}"
-            rm -rf \
-              "target/ci/.fingerprint/${crate}-"* \
-              "target/ci/build/${crate}-"*
-            rm -f \
-              "target/ci/deps/${file}-"* \
-              "target/ci/deps/lib${file}-"* \
-              "target/ci/${crate}" \
-              "target/ci/${crate}.d"
-          done
-          rm -rf \
-            target/ci/incremental \
-            target/ci/examples
-          du -sh target/ci
+    with:
+      runners: '["ubuntu-26.04-arm", "windows-11-arm", "macos-26"]'
+      rust_version: "1.100"
+      clippy_strict: true
+      timeout: 5
 
 
   cargo-cache-cleanup:
     name: Workflows
     needs: test
     if: github.ref == 'refs/heads/main'
-    uses: ystorian/workflows/.github/workflows/cargo_cache_cleanup.yaml@99bf9b80277846225c3239684627b6e599d14412 # v1.3.0
+    uses: ystorian/workflows/.github/workflows/cargo_cache_cleanup.yaml@a0d64f0770981a7601234405af0afa14637fa7dc # v1.9.2
     permissions:
       actions: write # Required to list and delete the cache entries.
 
@@ -280,6 +73,6 @@ jobs:
     name: Workflows
     needs: [changes, check, test]
     if: always()
-    uses: ystorian/workflows/.github/workflows/status_check.yaml@99bf9b80277846225c3239684627b6e599d14412 # v1.3.0
+    uses: ystorian/workflows/.github/workflows/status_check.yaml@a0d64f0770981a7601234405af0afa14637fa7dc # v1.9.2
     with:
       needs: ${{ toJSON(needs) }}
