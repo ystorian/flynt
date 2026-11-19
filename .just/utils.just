@@ -381,13 +381,13 @@ no_index dir='.':
 	echo {{ title('Disable content indexing on generated files') }}
 
 	# macOS.
-	{{ if os() == 'macos' { echo(dim(['Disable', YELLOW + BOLD + 'Time Machine backups'])) } }}
-	{{ if os() == 'macos' { echo(dim(['Disable', YELLOW + BOLD + 'Spotlight indexing'])) } }}
+	{{ if os() == 'macos' { echo(info(['Disable', YELLOW + BOLD + 'Time Machine backups'])) } }}
+	{{ if os() == 'macos' { echo(info(['Disable', YELLOW + BOLD + 'Spotlight indexing'])) } }}
 
 	# Windows.
-	{{ if os() == 'windows' { echo(dim(['Disable', YELLOW + BOLD + 'Microsoft Defender'])) } }}
-	{{ if os() == 'windows' { echo(dim([YELLOW + '  (requires administrator privileges)'])) } }}
-	{{ if os() == 'macos' { echo(dim(['Disable', YELLOW + BOLD + 'content indexing'])) } }}
+	{{ if os() == 'windows' { echo(info(['Disable', YELLOW + BOLD + 'Microsoft Defender'])) } }}
+	{{ if os() == 'windows' { echo(warning('Requires administrator privileges')) } }}
+	{{ if os() == 'macos' { echo(info(['Disable', YELLOW + BOLD + 'content indexing'])) } }}
 
 	if [ '{{ dir }}' != '.' ]; then \
 		echo {{ info(['Directory:', BOLD + absolute_path(dir)]) }}; \
@@ -427,6 +427,9 @@ no_index dir='.':
 	# PHP.
 	just no_index_dir "{{ absolute_path(dir + '/' + 'vendor') }}"
 
+	# Terraform.
+	just no_index_dir "{{ absolute_path(dir + '/' + 'terraform/.terraform') }}"
+
 	echo {{ done('') }}
 
 # Disable Spotlight indexing and Time Machine backups on a directory
@@ -448,19 +451,19 @@ no_index_dir dir:
 			"{{ absolute_path(dir) }}" 2>/dev/null)" =~ 'MDSystemFile' ]]; then \
 		xattr -w com.apple.metadata:kMDItemSupportFileType MDSystemFile \
 			"{{ absolute_path(dir) }}"; \
-		echo {{ info(['Excluded', BOLD + dir, 'from Spotlight indexing']) }}; \
+		echo {{ note(['Excluded', BOLD + dir, 'from Spotlight indexing']) }}; \
 	fi
 
 	# Disable Time Machine - enable on `.git`.
 	if [[ "{{ absolute_path(dir) }}" =~ '/.git' ]]; then \
 		if [[ "$(tmutil isexcluded "{{ absolute_path(dir) }}")" =~ '[Excluded]' ]]; then \
 			tmutil removeexclusion "{{ absolute_path(dir) }}"; \
-			echo {{ warning(['Included', BOLD + dir, 'in Time Machine backups']) }}; \
+			echo {{ note(['Included', BOLD + dir, 'in Time Machine backups']) }}; \
 		fi; \
 	else \
 		if [[ "$(tmutil isexcluded "{{ absolute_path(dir) }}")" =~ '[Included]' ]]; then \
 			tmutil addexclusion "{{ absolute_path(dir) }}"; \
-			echo {{ info(['Excluded', BOLD + dir, 'from Time Machine backups']) }}; \
+			echo {{ note(['Excluded', BOLD + dir, 'from Time Machine backups']) }}; \
 		fi; \
 	fi
 
@@ -490,7 +493,7 @@ no_index_dir dir:
 		powershell \
 			-NoProfile \
 			-Command "& {Add-MpPreference -ExclusionPath '{{ absolute_path(dir) }}'" \
-		&& echo {{ info(['Excluded', BOLD + dir, 'from Microsoft Defender']) }} \
+		&& echo {{ note(['Excluded', BOLD + dir, 'from Microsoft Defender']) }} \
 		|| echo {{ error(['Could not exclude', BOLD + dir, 'from Microsoft Defender']) }}; \
 	fi
 
