@@ -2,7 +2,7 @@
 
 [package]
 name = "flynt"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 description = "Fluent linter for Askama templates"
 license = "MIT OR Apache-2.0"
