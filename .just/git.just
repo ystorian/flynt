@@ -177,7 +177,7 @@ pr_dev_files branch=dev_branch: check_command_gh
 		exit 0;
 	fi
 
-	echo {{ note('Modified dev files:') }};
+	echo {{ info('Modified dev files:') }};
 	echo "$files" | while IFS= read -r file; do
 		echo {{ dim(GREEN + '$file') }};
 	done
@@ -185,7 +185,11 @@ pr_dev_files branch=dev_branch: check_command_gh
 	git switch --quiet --create '{{ branch }}'
 	echo "$files" | xargs git add --all --
 	echo "$files" | xargs git commit --quiet --signoff --message 'Refresh dev files' --
-	git push --quiet --set-upstream origin '{{ branch }}'
+	# Hide the GitHub "Create a pull request" hint.
+	if ! push="$(git push --quiet --set-upstream origin '{{ branch }}' 2>&1)"; then
+		echo "$push" >&2;
+		exit 1;
+	fi
 
 	body="$(printf 'Refresh the dev files:\n\n%s\n' "$(echo "$files" | sed 's/^/- `/; s/$/`/')")";
 
@@ -195,8 +199,9 @@ pr_dev_files branch=dev_branch: check_command_gh
 	echo {{ info(['Created PR', BOLD + '#$number']) }};
 
 	# Assign the PR to the current user.
-	gh api --method POST "repos/{{ owner }}/{{ repo }}/issues/$number/assignees" \
-		-f "assignees[]=$(gh api user --jq '.login')" --jq '.html_url'
+	pr="$(gh api --method POST "repos/{{ owner }}/{{ repo }}/issues/$number/assignees" \
+		-f "assignees[]=$(gh api user --jq '.login')" --jq '.html_url')";
+	echo {{ info('$pr') }};
 
 	just merge_pr {{ branch }}
 
@@ -293,7 +298,7 @@ merge_pr branch=dev_branch: check_command_gh
 	git branch --quiet -D '{{ branch }}'
 	git push --quiet origin --delete '{{ branch }}' 2>/dev/null || true
 
-	echo {{ info([GREEN + 'Merged #$number', '  https://github.com/' + owner + '/' + repo + '/pulls/$number']) }}
+	echo {{ info([GREEN + 'Merged', GREEN + BOLD + '#$number', 'https://github.com/' + owner + '/' + repo + '/pulls/$number']) }}
 	echo {{ done(branch) }}
 
 # Git hook pre-commit script for Just
